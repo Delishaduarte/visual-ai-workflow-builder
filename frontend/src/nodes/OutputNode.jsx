@@ -1,45 +1,25 @@
+import React from 'react';
 import { Handle, Position } from '@xyflow/react';
 
-function OutputNode({ data }) {
+export default function OutputNode({ data }) {
   return (
-    <div
-      style={{
-        padding: '10px 15px',
-        borderRadius: '6px',
-        border: '2px solid #16a34a',
-        background: '#f0fdf4',
-        color: '#14532d',
-        fontWeight: 'bold',
-        fontSize: '14px',
-        textAlign: 'center',
-        width: '180px',
-      }}
-    >
-      <Handle type="target" position={Position.Left} />
-
-      Output
-
-      <div
-        className="nodrag"
-        style={{
-          width: '100%',
-          marginTop: '8px',
-          padding: '6px',
-          fontSize: '12px',
-          fontWeight: 'normal',
-          minHeight: '40px',
-          background: '#ffffff',
-          border: '1px solid #d1fae5',
-          borderRadius: '4px',
-          textAlign: 'left',
-          boxSizing: 'border-box',
-          wordBreak: 'break-word',
-        }}
-      >
-        {data.value || '(no output yet)'}
+    <div className="node-card" style={{ borderLeft: '4px solid #06b6d4' }}>
+      <Handle type="target" position={Position.Left} style={{ background: '#06b6d4', width: 10, height: 10 }} />
+      <div className="node-header">
+        <div className="node-title-group">
+          <span>📤</span>
+          <span className="node-title">Output</span>
+        </div>
+        <button className="node-delete-btn nodrag" onClick={data.onDelete}>×</button>
+      </div>
+      <div className="node-body">
+        <div className="node-field">
+          <span className="node-label">Result</span>
+          <div className="node-preview nodrag">
+            {data.value ? data.value : <span style={{ color: '#94a3b8' }}>(no output yet)</span>}
+          </div>
+        </div>
       </div>
     </div>
   );
 }
-
-export default OutputNode;

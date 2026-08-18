@@ -1,47 +1,40 @@
+import React from 'react';
 import { Handle, Position } from '@xyflow/react';
 
-// "data" is passed in by React Flow — it's the same object we defined
-// for this node back in App.jsx's initialNodes array.
-// "data.value" holds whatever the user has typed so far.
-// "data.onChange" is a function (given to us by App.jsx) that updates it.
-function InputNode({ data }) {
+export default function InputNode({ data }) {
   return (
-    <div
-      style={{
-        padding: '10px 15px',
-        borderRadius: '6px',
-        border: '2px solid #2563eb',
-        background: '#eff6ff',
-        color: '#1e3a8a',
-        fontWeight: 'bold',
-        fontSize: '14px',
-        textAlign: 'center',
-        width: '180px',
-      }}
-    >
-      Input Node
-
-      <input
-        type="text"
-        placeholder="Enter input value..."
-        value={data.value || ''}
-        onChange={(e) => data.onChange(e.target.value)}
-        // Stops React Flow from treating clicks/drags inside the input
-        // as an attempt to drag the whole node.
-        className="nodrag"
-        style={{
-          width: '100%',
-          marginTop: '8px',
-          padding: '4px',
-          fontSize: '12px',
-          fontWeight: 'normal',
-          boxSizing: 'border-box',
-        }}
-      />
-
-      <Handle type="source" position={Position.Right} />
+    <div className="node-card" style={{ borderLeft: '4px solid #10b981' }}>
+      <div className="node-header">
+        <div className="node-title-group">
+          <span>📥</span>
+          <span className="node-title">Input</span>
+        </div>
+        <button className="node-delete-btn nodrag" onClick={data.onDelete}>×</button>
+      </div>
+      <div className="node-body">
+        <div className="node-field">
+          <span className="node-label">Variable Name</span>
+          <input
+            type="text"
+            className="node-input nodrag"
+            placeholder="input_text"
+            value={data.varName || ''}
+            onChange={(e) => data.onChange({ varName: e.target.value })}
+          />
+        </div>
+        <div className="node-field">
+          <span className="node-label">Default Text</span>
+          <textarea
+            className="node-textarea nodrag"
+            rows={2}
+            placeholder="Enter value..."
+            value={data.value || ''}
+            onChange={(e) => data.onChange({ value: e.target.value })}
+            style={{ resize: 'none' }}
+          />
+        </div>
+      </div>
+      <Handle type="source" position={Position.Right} style={{ background: '#10b981', width: 10, height: 10 }} />
     </div>
   );
 }
-
-export default InputNode;
