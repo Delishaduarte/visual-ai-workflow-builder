@@ -1,3 +1,5 @@
+import os
+from google import genai
 from models import Workflow, WorkflowNode
 
 
@@ -6,14 +8,24 @@ class WorkflowError(Exception):
     pass
 
 
+# Created once, reused for every request — the client reads
+# GEMINI_API_KEY from the environment automatically.
+_gemini_client = None
+
+
+def get_gemini_client():
+    global _gemini_client
+    if _gemini_client is None:
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            raise WorkflowError(
+                "GEMINI_API_KEY is not set. Check your backend/.env file."
+            )
+        _gemini_client = genai.Client(api_key=api_key)
+    return _gemini_client
+
+
 def build_graph(workflow: Workflow):
-    """
-    Turns the flat nodes/edges lists into two lookup structures:
-    - node_map: id -> node object, for quick lookups
-    - adjacency: id -> list of ids it points to (its "children")
-    - in_degree: id -> how many edges point INTO this node
-      (in_degree of 0 means "nothing feeds into this node" = a starting point)
-    """
     node_map = {node.id: node for node in workflow.nodes}
     adjacency = {node.id: [] for node in workflow.nodes}
     in_degree = {node.id: 0 for node in workflow.nodes}
@@ -31,17 +43,8 @@ def build_graph(workflow: Workflow):
 
 
 def topological_sort(workflow: Workflow):
-    """
-    Determines a valid execution order using Kahn's algorithm:
-    1. Start with all nodes that have in_degree 0 (no incoming edges).
-    2. Repeatedly "remove" a node from the graph, decreasing the
-       in_degree of its children. Any child that drops to 0 is now ready.
-    3. If we finish and haven't visited every node, there's a cycle
-       (some nodes were waiting on each other forever).
-    """
     node_map, adjacency, in_degree = build_graph(workflow)
 
-    # Nodes with no incoming edges are valid starting points.
     queue = [node_id for node_id, degree in in_degree.items() if degree == 0]
     execution_order = []
 
@@ -61,11 +64,6 @@ def topological_sort(workflow: Workflow):
 
 
 def find_disconnected_nodes(workflow: Workflow):
-    """
-    A node is "disconnected" if it has no edges touching it at all
-    (not a source AND not a target of any edge), AND there is more
-    than one node total (a single standalone node is fine).
-    """
     if len(workflow.nodes) <= 1:
         return []
 
@@ -77,29 +75,67 @@ def find_disconnected_nodes(workflow: Workflow):
     return [node.id for node in workflow.nodes if node.id not in touched]
 
 
+def call_gemini(prompt_text: str, data: dict) -> str:
+    """
+    Sends a real request to the Gemini API using settings from the
+    LLM node's config fields. Falls back to sensible defaults if a
+    field was left empty.
+    """
+    client = get_gemini_client()
+
+    model = data.get("model") or "gemini-3.6-flash"
+    system_prompt = data.get("systemPrompt") or ""
+
+    temperature_raw = data.get("temperature")
+    try:
+        temperature = float(temperature_raw) if temperature_raw else 0.7
+    except ValueError:
+        temperature = 0.7
+
+    max_tokens_raw = data.get("maxTokens")
+    try:
+        max_tokens = int(max_tokens_raw) if max_tokens_raw else 1000
+    except ValueError:
+        max_tokens = 1000
+
+    config = {
+        "temperature": temperature,
+        "max_output_tokens": max_tokens,
+    }
+    if system_prompt:
+        config["system_instruction"] = system_prompt
+
+    try:
+        response = client.models.generate_content(
+            model=model,
+            contents=prompt_text,
+            config=config,
+        )
+    except Exception as e:
+        raise WorkflowError(f"Gemini API call failed: {e}")
+
+    return response.text
+
+
 def run_node(node: WorkflowNode, incoming_value):
-    """
-    Executes a single node. For now, all logic is MOCKED — no real
-    LLM calls yet (that's Phase 7). Each node type just transforms
-    the incoming value in a simple, visible way so we can prove the
-    pipeline works end-to-end.
-    """
     node_type = node.type
     data = node.data
 
     if node_type == "inputNode":
-        # Input nodes ignore incoming_value — they're the start of the chain.
         return data.get("value", "")
 
     if node_type == "promptTemplateNode":
         template = data.get("template", "")
-        # Very simple mock: just show what the template would look like
-        # with the incoming value substituted for the first {{...}} found.
-        return f"[MOCK PROMPT] {template} | incoming: {incoming_value}"
+        # Simple substitution: replace {{ any_variable_name }} with the
+        # incoming value. Only supports ONE variable for now.
+        if "{{" in template and "}}" in template:
+            start = template.find("{{")
+            end = template.find("}}") + 2
+            return template[:start] + str(incoming_value) + template[end:]
+        return template
 
     if node_type == "llmNode":
-        model = data.get("model", "unknown-model")
-        return f"[MOCK LLM RESPONSE from {model}] based on: {incoming_value}"
+        return call_gemini(str(incoming_value), data)
 
     if node_type == "formatterNode":
         format_type = data.get("formatType", "text")
@@ -112,25 +148,13 @@ def run_node(node: WorkflowNode, incoming_value):
 
 
 def execute_workflow(workflow: Workflow):
-    """
-    Runs the full workflow: validates it, determines order, then
-    executes each node in sequence, passing each node's output as
-    the next node's input.
-
-    Returns a dict of results per node id, plus the overall status.
-    """
     disconnected = find_disconnected_nodes(workflow)
     if disconnected:
         raise WorkflowError(f"Workflow has disconnected nodes: {disconnected}")
 
     execution_order, node_map = topological_sort(workflow)
 
-    # Tracks the output value produced by each node, so downstream
-    # nodes can look up what their upstream node(s) produced.
     node_outputs = {}
-
-    # Maps each node to its incoming edges, so we know whose output
-    # to feed in as this node's input.
     incoming_edges = {node_id: [] for node_id in node_map}
     for edge in workflow.edges:
         incoming_edges[edge.target].append(edge.source)
@@ -140,14 +164,12 @@ def execute_workflow(workflow: Workflow):
     for node_id in execution_order:
         node = node_map[node_id]
         sources = incoming_edges[node_id]
-
-        # If this node has no upstream nodes, there's no incoming value.
-        # If it has exactly one, use that node's output directly.
-        # (Multiple-input nodes aren't supported yet — future phase.)
         incoming_value = node_outputs[sources[0]] if sources else None
 
         try:
             output = run_node(node, incoming_value)
+        except WorkflowError:
+            raise
         except Exception as e:
             raise WorkflowError(f"Error executing node '{node_id}' ({node.type}): {e}")
 
