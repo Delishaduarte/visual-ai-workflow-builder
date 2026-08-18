@@ -1,6 +1,7 @@
-import React from 'react';
 import { Handle, Position } from '@xyflow/react';
 
+// New in Phase 2. Splits out LLM configuration from the prompt itself.
+// All fields are just stored for now — no actual API calls yet (that's Phase 7).
 export default function LLMNode({ data }) {
   return (
     <div className="node-card" style={{ borderLeft: '4px solid #6366f1' }}>
@@ -8,7 +9,7 @@ export default function LLMNode({ data }) {
       <div className="node-header">
         <div className="node-title-group">
           <span>🤖</span>
-          <span className="node-title">LLM Engine</span>
+          <span className="node-title">LLM</span>
         </div>
         <button className="node-delete-btn nodrag" onClick={data.onDelete}>×</button>
       </div>
@@ -21,7 +22,7 @@ export default function LLMNode({ data }) {
             onChange={(e) => data.onChange({ provider: e.target.value })}
           >
             <option value="openai">OpenAI</option>
-            <option value="groq">Groq</option>
+            <option value="anthropic">Anthropic</option>
             <option value="gemini">Google Gemini</option>
           </select>
         </div>
@@ -31,8 +32,42 @@ export default function LLMNode({ data }) {
             type="text"
             className="node-input nodrag"
             placeholder="gpt-4o-mini"
-            value={data.model || 'gpt-4o-mini'}
+            value={data.model || ''}
             onChange={(e) => data.onChange({ model: e.target.value })}
+          />
+        </div>
+        <div className="node-field">
+          <span className="node-label">Temperature</span>
+          <input
+            type="number"
+            step="0.1"
+            min="0"
+            max="2"
+            className="node-input nodrag"
+            placeholder="0.7"
+            value={data.temperature ?? ''}
+            onChange={(e) => data.onChange({ temperature: e.target.value })}
+          />
+        </div>
+        <div className="node-field">
+          <span className="node-label">Max Tokens</span>
+          <input
+            type="number"
+            className="node-input nodrag"
+            placeholder="1000"
+            value={data.maxTokens ?? ''}
+            onChange={(e) => data.onChange({ maxTokens: e.target.value })}
+          />
+        </div>
+        <div className="node-field">
+          <span className="node-label">System Prompt</span>
+          <textarea
+            className="node-textarea nodrag"
+            rows={2}
+            placeholder="You are a helpful assistant..."
+            value={data.systemPrompt || ''}
+            onChange={(e) => data.onChange({ systemPrompt: e.target.value })}
+            style={{ resize: 'none' }}
           />
         </div>
       </div>

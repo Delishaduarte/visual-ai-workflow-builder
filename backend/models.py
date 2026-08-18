@@ -1,0 +1,20 @@
+from pydantic import BaseModel
+from typing import Any, Dict, List, Optional
+
+
+class WorkflowNode(BaseModel):
+    id: str
+    type: str
+    position: Dict[str, float]
+    data: Dict[str, Any] = {}
+
+
+class WorkflowEdge(BaseModel):
+    id: str
+    source: str
+    target: str
+
+
+class Workflow(BaseModel):
+    nodes: List[WorkflowNode]
+    edges: List[WorkflowEdge]

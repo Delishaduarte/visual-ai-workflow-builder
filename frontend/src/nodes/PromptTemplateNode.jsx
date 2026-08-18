@@ -1,6 +1,8 @@
-import React from 'react';
 import { Handle, Position } from '@xyflow/react';
 
+// New in Phase 2. Holds a template string with {{variable}} placeholders.
+// We are NOT doing the actual substitution yet — that's backend logic (Phase 6).
+// This node just captures and stores the template text.
 export default function PromptTemplateNode({ data }) {
   return (
     <div className="node-card" style={{ borderLeft: '4px solid #f59e0b' }}>
@@ -18,7 +20,7 @@ export default function PromptTemplateNode({ data }) {
           <textarea
             className="node-textarea nodrag"
             rows={3}
-            placeholder="Summarize this: {{input}}"
+            placeholder={'Summarize this: {{customer_text}}'}
             value={data.template || ''}
             onChange={(e) => data.onChange({ template: e.target.value })}
             style={{ resize: 'none' }}

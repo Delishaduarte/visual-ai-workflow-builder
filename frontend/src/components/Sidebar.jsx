@@ -1,5 +1,6 @@
-import React from 'react';
-
+// Uses the browser's built-in HTML5 drag-and-drop API.
+// When dragging starts, we stash which node type was picked up
+// inside the drag event itself, so the canvas can read it on drop.
 export default function Sidebar({ onClearCanvas }) {
   const onDragStart = (event, nodeType) => {
     event.dataTransfer.setData('application/reactflow', nodeType);
@@ -8,24 +9,24 @@ export default function Sidebar({ onClearCanvas }) {
 
   return (
     <aside className="sidebar">
-      <h3 className="sidebar-title">Nodes Palette</h3>
-      <p className="sidebar-desc">Drag nodes onto the canvas to construct your AI pipeline.</p>
+      <h3 className="sidebar-title">Nodes</h3>
+      <p className="sidebar-desc">Drag a node onto the canvas to add it.</p>
 
       <div className="node-palette">
-        <div className="dndnode" onDragStart={(e) => onDragStart(e, 'inputNode')} draggable>
-          📥 Input Node
+        <div className="dndnode" draggable onDragStart={(e) => onDragStart(e, 'inputNode')}>
+          📥 Input
         </div>
-        <div className="dndnode" onDragStart={(e) => onDragStart(e, 'promptTemplateNode')} draggable>
+        <div className="dndnode" draggable onDragStart={(e) => onDragStart(e, 'promptTemplateNode')}>
           📝 Prompt Template
         </div>
-        <div className="dndnode" onDragStart={(e) => onDragStart(e, 'llmNode')} draggable>
-          🤖 LLM Engine
+        <div className="dndnode" draggable onDragStart={(e) => onDragStart(e, 'llmNode')}>
+          🤖 LLM
         </div>
-        <div className="dndnode" onDragStart={(e) => onDragStart(e, 'formatterNode')} draggable>
+        <div className="dndnode" draggable onDragStart={(e) => onDragStart(e, 'formatterNode')}>
           ⚡ Formatter
         </div>
-        <div className="dndnode" onDragStart={(e) => onDragStart(e, 'outputNode')} draggable>
-          📤 Output Node
+        <div className="dndnode" draggable onDragStart={(e) => onDragStart(e, 'outputNode')}>
+          📤 Output
         </div>
       </div>
 

@@ -1,6 +1,6 @@
-import React from 'react';
 import { Handle, Position } from '@xyflow/react';
 
+// Phase 2: dropdown of fixed format types instead of free text.
 export default function FormatterNode({ data }) {
   return (
     <div className="node-card" style={{ borderLeft: '4px solid #ec4899' }}>
@@ -20,9 +20,9 @@ export default function FormatterNode({ data }) {
             value={data.formatType || 'text'}
             onChange={(e) => data.onChange({ formatType: e.target.value })}
           >
-            <option value="text">Plain Text</option>
-            <option value="json">JSON Object</option>
-            <option value="markdown">Markdown</option>
+            <option value="text">Text</option>
+            <option value="json">JSON</option>
+            <option value="structured">Structured</option>
           </select>
         </div>
       </div>
