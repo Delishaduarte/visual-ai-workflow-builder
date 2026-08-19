@@ -106,6 +106,7 @@ function WorkflowCanvas() {
 
   const [workflowName, setWorkflowName] = useState('My Workflow');
   const [savedWorkflowNames, setSavedWorkflowNames] = useState([]);
+  const [connectionError, setConnectionError] = useState(null);
 
   // Theme state — lives here, INSIDE the component, since useState/useEffect
   // must always be called from inside a component or hook, never at the
@@ -283,6 +284,7 @@ function WorkflowCanvas() {
     const problems = validateWorkflow(nodes, edges);
     if (problems.length > 0) {
       setValidationProblems(problems);
+      setConnectionError(null);
       return;
     }
     setValidationProblems([]);
@@ -298,7 +300,7 @@ function WorkflowCanvas() {
 
     const payload = { nodes: getCleanNodes(), edges: getCleanEdges() };
 
-    let response;
+        let response;
     try {
       const res = await fetch('http://127.0.0.1:8000/workflow/run', {
         method: 'POST',
@@ -306,8 +308,9 @@ function WorkflowCanvas() {
         body: JSON.stringify(payload),
       });
       response = await res.json();
+      setConnectionError(null);
     } catch (err) {
-      alert('Could not reach the backend. Is FastAPI running on port 8000?');
+      setConnectionError("Can't reach the backend. Make sure FastAPI is running on port 8000.");
       setIsRunning(false);
       return;
     }
@@ -378,15 +381,37 @@ function WorkflowCanvas() {
           <Controls />
         </ReactFlow>
 
-        <button className="run-button" onClick={runWorkflow} disabled={isRunning}>
-          {isRunning ? (
-            'Running...'
-          ) : (
-            <>
-              <PlayIcon /> Run Workflow
-            </>
-          )}
-        </button>
+                {nodes.length === 0 && (
+                  <div className="empty-canvas-hint">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <rect x="4" y="4" width="16" height="16" rx="3" strokeDasharray="3 3" />
+                      <path d="M12 9v6" />
+                      <path d="M9 12h6" />
+                    </svg>
+                    <p>Your canvas is empty</p>
+                    <p style={{ fontSize: '12px', marginTop: '2px' }}>Drag a node from the sidebar to get started</p>
+                  </div>
+                )}
+
+                <div className="top-toolbar">
+                  <span className="top-toolbar-name">{workflowName || 'Untitled Workflow'}</span>
+                  <div className="top-toolbar-divider" />
+                  <button className="run-button" onClick={runWorkflow} disabled={isRunning}>
+                    {isRunning ? (
+                      'Running...'
+                    ) : (
+                      <>
+                        <PlayIcon /> Run Workflow
+                      </>
+                    )}
+                  </button>
+                </div>
+        {connectionError && (
+          <div className="connection-error-banner">
+            <strong>Connection error</strong>
+            {connectionError}
+          </div>
+        )}
 
         {validationProblems.length > 0 && (
           <div className="validation-panel">
