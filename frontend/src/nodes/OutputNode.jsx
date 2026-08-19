@@ -1,22 +1,28 @@
 import { Handle, Position } from '@xyflow/react';
+import { OutputIcon } from '../icons';
 
 function statusIcon(status) {
   if (status === 'success') return '✓';
-  if (status === 'running') return '⏳';
-  if (status === 'error') return '❌';
+  if (status === 'running') return '●';
+  if (status === 'error') return '✕';
   return '○';
 }
 
 export default function OutputNode({ data }) {
+  const statusClass =
+    data.runStatus === 'running' ? 'is-running' : data.runStatus === 'error' ? 'is-error' : '';
+
   return (
-    <div className="node-card" style={{ borderLeft: '4px solid #06b6d4' }}>
+    <div className={`node-card node-card--output ${statusClass}`} style={{ borderLeft: '4px solid #06b6d4' }}>
       <Handle type="target" position={Position.Left} style={{ background: '#06b6d4', width: 10, height: 10 }} />
       <div className="node-header">
         <div className="node-title-group">
-          <span>📤</span>
+          <OutputIcon />
           <span className="node-title">
             Output
-            {data.runStatus && <span className="node-status-badge">{statusIcon(data.runStatus)}</span>}
+            {data.runStatus && (
+              <span className={`node-status-badge ${data.runStatus}`}>{statusIcon(data.runStatus)}</span>
+            )}
           </span>
         </div>
         <button className="node-delete-btn nodrag" onClick={data.onDelete}>×</button>

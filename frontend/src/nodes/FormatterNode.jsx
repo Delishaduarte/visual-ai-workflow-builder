@@ -1,22 +1,28 @@
 import { Handle, Position } from '@xyflow/react';
+import { FormatterIcon } from '../icons';
 
 function statusIcon(status) {
   if (status === 'success') return '✓';
-  if (status === 'running') return '⏳';
-  if (status === 'error') return '❌';
+  if (status === 'running') return '●';
+  if (status === 'error') return '✕';
   return '○';
 }
 
 export default function FormatterNode({ data }) {
+  const statusClass =
+    data.runStatus === 'running' ? 'is-running' : data.runStatus === 'error' ? 'is-error' : '';
+
   return (
-    <div className="node-card" style={{ borderLeft: '4px solid #ec4899' }}>
+    <div className={`node-card node-card--formatter ${statusClass}`} style={{ borderLeft: '4px solid #ec4899' }}>
       <Handle type="target" position={Position.Left} style={{ background: '#ec4899', width: 10, height: 10 }} />
       <div className="node-header">
         <div className="node-title-group">
-          <span>⚡</span>
+          <FormatterIcon />
           <span className="node-title">
             Formatter
-            {data.runStatus && <span className="node-status-badge">{statusIcon(data.runStatus)}</span>}
+            {data.runStatus && (
+              <span className={`node-status-badge ${data.runStatus}`}>{statusIcon(data.runStatus)}</span>
+            )}
           </span>
         </div>
         <button className="node-delete-btn nodrag" onClick={data.onDelete}>×</button>

@@ -1,23 +1,28 @@
 import { Handle, Position } from '@xyflow/react';
+import { LLMIcon } from '../icons';
 
-// Small helper that turns a status word into an icon.
 function statusIcon(status) {
   if (status === 'success') return '✓';
-  if (status === 'running') return '⏳';
-  if (status === 'error') return '❌';
+  if (status === 'running') return '●';
+  if (status === 'error') return '✕';
   return '○';
 }
 
 export default function LLMNode({ data }) {
+  const statusClass =
+    data.runStatus === 'running' ? 'is-running' : data.runStatus === 'error' ? 'is-error' : '';
+
   return (
-    <div className="node-card" style={{ borderLeft: '4px solid #6366f1' }}>
+    <div className={`node-card node-card--llm ${statusClass}`} style={{ borderLeft: '4px solid #6366f1' }}>
       <Handle type="target" position={Position.Left} style={{ background: '#6366f1', width: 10, height: 10 }} />
       <div className="node-header">
         <div className="node-title-group">
-          <span>🤖</span>
+          <LLMIcon />
           <span className="node-title">
             LLM
-            {data.runStatus && <span className="node-status-badge">{statusIcon(data.runStatus)}</span>}
+            {data.runStatus && (
+              <span className={`node-status-badge ${data.runStatus}`}>{statusIcon(data.runStatus)}</span>
+            )}
           </span>
         </div>
         <button className="node-delete-btn nodrag" onClick={data.onDelete}>×</button>

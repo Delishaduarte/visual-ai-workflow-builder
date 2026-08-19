@@ -1,14 +1,28 @@
 import { Handle, Position } from '@xyflow/react';
+import { InputIcon } from '../icons';
 
-// Phase 2: now stores TWO fields — varName (so other nodes can
-// reference this input by name) and value (the actual text).
+function statusIcon(status) {
+  if (status === 'success') return '✓';
+  if (status === 'running') return '●';
+  if (status === 'error') return '✕';
+  return '○';
+}
+
 export default function InputNode({ data }) {
+  const statusClass =
+    data.runStatus === 'running' ? 'is-running' : data.runStatus === 'error' ? 'is-error' : '';
+
   return (
-    <div className="node-card" style={{ borderLeft: '4px solid #10b981' }}>
+    <div className={`node-card node-card--input ${statusClass}`} style={{ borderLeft: '4px solid #10b981' }}>
       <div className="node-header">
         <div className="node-title-group">
-          <span>📥</span>
-          <span className="node-title">Input</span>
+          <InputIcon />
+          <span className="node-title">
+            Input
+            {data.runStatus && (
+              <span className={`node-status-badge ${data.runStatus}`}>{statusIcon(data.runStatus)}</span>
+            )}
+          </span>
         </div>
         <button className="node-delete-btn nodrag" onClick={data.onDelete}>×</button>
       </div>

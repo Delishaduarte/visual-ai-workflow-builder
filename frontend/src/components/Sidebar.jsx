@@ -1,8 +1,22 @@
 import { useRef } from 'react';
+import {
+  InputIcon,
+  PromptIcon,
+  LLMIcon,
+  FormatterIcon,
+  OutputIcon,
+  SunIcon,
+  MoonIcon,
+  TrashIcon,
+  DownloadIcon,
+  UploadIcon,
+  SaveIcon,
+  NewIcon,
+} from '../icons';
 
-// Sidebar now handles: node palette (unchanged), workflow name,
-// New/Save/Load/Delete, Export/Import, and Clear Canvas.
 export default function Sidebar({
+  theme,
+  onToggleTheme,
   workflowName,
   onWorkflowNameChange,
   onNewWorkflow,
@@ -14,9 +28,6 @@ export default function Sidebar({
   onDeleteWorkflow,
   onClearCanvas,
 }) {
-  // A hidden native file input, triggered programmatically by our
-  // visible "Import JSON" button — this is a common pattern since
-  // <input type="file"> can't be styled well directly.
   const fileInputRef = useRef(null);
 
   const onDragStart = (event, nodeType) => {
@@ -28,30 +39,34 @@ export default function Sidebar({
     const file = event.target.files[0];
     if (!file) return;
     onImportWorkflow(file);
-    // Reset the input so selecting the SAME file again still fires onChange.
     event.target.value = '';
   };
 
   return (
     <aside className="sidebar">
-      <h3 className="sidebar-title">Nodes</h3>
+      <div className="sidebar-header-row">
+        <h3 className="sidebar-title">Nodes</h3>
+        <button className="theme-toggle-btn" onClick={onToggleTheme} title="Toggle theme">
+          {theme === 'light' ? <MoonIcon /> : <SunIcon />}
+        </button>
+      </div>
       <p className="sidebar-desc">Drag a node onto the canvas to add it.</p>
 
       <div className="node-palette">
         <div className="dndnode" draggable onDragStart={(e) => onDragStart(e, 'inputNode')}>
-          📥 Input
+          <InputIcon /> Input
         </div>
         <div className="dndnode" draggable onDragStart={(e) => onDragStart(e, 'promptTemplateNode')}>
-          📝 Prompt Template
+          <PromptIcon /> Prompt Template
         </div>
         <div className="dndnode" draggable onDragStart={(e) => onDragStart(e, 'llmNode')}>
-          🤖 LLM
+          <LLMIcon /> LLM
         </div>
         <div className="dndnode" draggable onDragStart={(e) => onDragStart(e, 'formatterNode')}>
-          ⚡ Formatter
+          <FormatterIcon /> Formatter
         </div>
         <div className="dndnode" draggable onDragStart={(e) => onDragStart(e, 'outputNode')}>
-          📤 Output
+          <OutputIcon /> Output
         </div>
       </div>
 
@@ -64,8 +79,8 @@ export default function Sidebar({
         onChange={(e) => onWorkflowNameChange(e.target.value)}
       />
 
-      <button className="sidebar-btn" onClick={onNewWorkflow}>🆕 New Workflow</button>
-      <button className="sidebar-btn" onClick={onSaveWorkflow}>💾 Save</button>
+      <button className="sidebar-btn" onClick={onNewWorkflow}><NewIcon /> New Workflow</button>
+      <button className="sidebar-btn" onClick={onSaveWorkflow}><SaveIcon /> Save</button>
 
       <h3 className="sidebar-section-title">Saved Workflows</h3>
       {savedWorkflowNames.length === 0 && (
@@ -76,13 +91,15 @@ export default function Sidebar({
           <span className="saved-workflow-row-name" onClick={() => onLoadWorkflow(name)}>
             {name}
           </span>
-          <button className="saved-workflow-delete" onClick={() => onDeleteWorkflow(name)}>×</button>
+          <button className="saved-workflow-delete" onClick={() => onDeleteWorkflow(name)}>
+            <TrashIcon />
+          </button>
         </div>
       ))}
 
       <h3 className="sidebar-section-title">JSON File</h3>
-      <button className="sidebar-btn" onClick={onExportWorkflow}>⬇ Export JSON</button>
-      <button className="sidebar-btn" onClick={() => fileInputRef.current.click()}>⬆ Import JSON</button>
+      <button className="sidebar-btn" onClick={onExportWorkflow}><DownloadIcon /> Export JSON</button>
+      <button className="sidebar-btn" onClick={() => fileInputRef.current.click()}><UploadIcon /> Import JSON</button>
       <input
         ref={fileInputRef}
         type="file"
@@ -92,7 +109,7 @@ export default function Sidebar({
       />
 
       <div style={{ marginTop: 'auto' }}>
-        <button className="clear-btn" onClick={onClearCanvas}>Clear Canvas</button>
+        <button className="clear-btn" onClick={onClearCanvas}><TrashIcon /> Clear Canvas</button>
       </div>
     </aside>
   );

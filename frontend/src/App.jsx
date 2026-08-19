@@ -11,6 +11,8 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import './App.css';
+import { validateWorkflow } from './validation';
+import { PlayIcon } from './icons';
 
 import InputNode from './nodes/InputNode';
 import PromptTemplateNode from './nodes/PromptTemplateNode';
@@ -30,8 +32,6 @@ const nodeTypes = {
 let idCount = 0;
 const getId = () => `node_${Date.now()}_${idCount++}`;
 
-// The key our saved workflows live under inside localStorage.
-// We store ONE object: { "My Workflow": {nodes, edges}, "Another": {...} }
 const STORAGE_KEY = 'visual-ai-workflow-builder:saved-workflows';
 
 const initialNodes = [
@@ -76,13 +76,11 @@ const initialEdges = [
 
 function statusIcon(status) {
   if (status === 'success') return '✓';
-  if (status === 'running') return '⏳';
-  if (status === 'error') return '❌';
+  if (status === 'running') return '●';
+  if (status === 'error') return '✕';
   return '○';
 }
 
-// Reads the whole saved-workflows object out of localStorage.
-// Returns {} if nothing is saved yet or if the data is corrupted.
 function readSavedWorkflows() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -104,12 +102,27 @@ function WorkflowCanvas() {
   const [runStatus, setRunStatus] = useState({});
   const [isRunning, setIsRunning] = useState(false);
   const [inspectedNodeId, setInspectedNodeId] = useState(null);
+  const [validationProblems, setValidationProblems] = useState([]);
 
   const [workflowName, setWorkflowName] = useState('My Workflow');
   const [savedWorkflowNames, setSavedWorkflowNames] = useState([]);
 
-  // On first load, populate the sidebar's saved-workflows list from
-  // whatever's already sitting in localStorage from a previous session.
+  // Theme state — lives here, INSIDE the component, since useState/useEffect
+  // must always be called from inside a component or hook, never at the
+  // top level of the file.
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem('visual-ai-workflow-builder:theme') || 'light';
+  });
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+    localStorage.setItem('visual-ai-workflow-builder:theme', theme);
+  }, [theme]);
+
+  const toggleTheme = useCallback(() => {
+    setTheme((t) => (t === 'light' ? 'dark' : 'light'));
+  }, []);
+
   useEffect(() => {
     setSavedWorkflowNames(Object.keys(readSavedWorkflows()));
   }, []);
@@ -163,18 +176,14 @@ function WorkflowCanvas() {
     setEdges([]);
     setRunStatus({});
     setInspectedNodeId(null);
+    setValidationProblems([]);
   }, [setNodes, setEdges]);
 
-  // "New Workflow" = clear canvas AND reset the name, since it's
-  // meant to start a brand new, unrelated workflow.
   const newWorkflow = useCallback(() => {
     clearCanvas();
     setWorkflowName('Untitled Workflow');
   }, [clearCanvas]);
 
-  // Strips out our injected onChange/onDelete/runStatus fields before
-  // saving/exporting — we only want to persist the REAL data the user
-  // entered, not internal function references or transient run state.
   const getCleanNodes = useCallback(() => {
     return nodes.map((n) => ({
       id: n.id,
@@ -198,7 +207,6 @@ function WorkflowCanvas() {
     }));
   }, [edges]);
 
-  // --- SAVE (to localStorage) ---
   const saveWorkflow = useCallback(() => {
     const name = workflowName.trim() || 'Untitled Workflow';
     const allSaved = readSavedWorkflows();
@@ -208,7 +216,6 @@ function WorkflowCanvas() {
     setWorkflowName(name);
   }, [workflowName, getCleanNodes, getCleanEdges]);
 
-  // --- LOAD (from localStorage) ---
   const loadWorkflow = useCallback(
     (name) => {
       const allSaved = readSavedWorkflows();
@@ -220,11 +227,11 @@ function WorkflowCanvas() {
       setWorkflowName(name);
       setRunStatus({});
       setInspectedNodeId(null);
+      setValidationProblems([]);
     },
     [setNodes, setEdges]
   );
 
-  // --- DELETE (from localStorage) ---
   const deleteWorkflow = useCallback((name) => {
     const allSaved = readSavedWorkflows();
     delete allSaved[name];
@@ -232,29 +239,19 @@ function WorkflowCanvas() {
     setSavedWorkflowNames(Object.keys(allSaved));
   }, []);
 
-  // --- EXPORT (download as a .json file) ---
   const exportWorkflow = useCallback(() => {
     const name = workflowName.trim() || 'Untitled Workflow';
-    const exportData = {
-      name,
-      nodes: getCleanNodes(),
-      edges: getCleanEdges(),
-    };
+    const exportData = { name, nodes: getCleanNodes(), edges: getCleanEdges() };
 
-    // Build an in-memory file (Blob), then trigger a download using a
-    // temporary invisible link — this is the standard browser pattern
-    // for "download this JS object as a file" with no backend involved.
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    // Turn "My Customer Support Workflow" into "my-customer-support-workflow.json"
     link.download = `${name.toLowerCase().replace(/\s+/g, '-')}.json`;
     link.click();
     URL.revokeObjectURL(url);
   }, [workflowName, getCleanNodes, getCleanEdges]);
 
-  // --- IMPORT (read an uploaded .json file) ---
   const importWorkflow = useCallback(
     (file) => {
       const reader = new FileReader();
@@ -270,6 +267,7 @@ function WorkflowCanvas() {
           setWorkflowName(parsed.name || 'Imported Workflow');
           setRunStatus({});
           setInspectedNodeId(null);
+          setValidationProblems([]);
         } catch (err) {
           alert('Could not read that file — is it valid JSON?');
         }
@@ -282,6 +280,13 @@ function WorkflowCanvas() {
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   const runWorkflow = useCallback(async () => {
+    const problems = validateWorkflow(nodes, edges);
+    if (problems.length > 0) {
+      setValidationProblems(problems);
+      return;
+    }
+    setValidationProblems([]);
+
     setIsRunning(true);
     setInspectedNodeId(null);
 
@@ -321,7 +326,7 @@ function WorkflowCanvas() {
     }
 
     setIsRunning(false);
-  }, [nodes, getCleanNodes, getCleanEdges, updateNodeData]);
+  }, [nodes, edges, getCleanNodes, getCleanEdges, updateNodeData]);
 
   const nodesWithHandlers = nodes.map((node) => ({
     ...node,
@@ -343,6 +348,8 @@ function WorkflowCanvas() {
   return (
     <div className="app-container">
       <Sidebar
+        theme={theme}
+        onToggleTheme={toggleTheme}
         workflowName={workflowName}
         onWorkflowNameChange={setWorkflowName}
         onNewWorkflow={newWorkflow}
@@ -367,13 +374,30 @@ function WorkflowCanvas() {
           nodeTypes={nodeTypes}
           fitView
         >
-          <Background color="#cbd5e1" gap={20} size={1} />
+          <Background color="var(--grid-dot)" gap={20} size={1.5} />
           <Controls />
         </ReactFlow>
 
         <button className="run-button" onClick={runWorkflow} disabled={isRunning}>
-          {isRunning ? '⏳ Running...' : '▶ Run Workflow'}
+          {isRunning ? (
+            'Running...'
+          ) : (
+            <>
+              <PlayIcon /> Run Workflow
+            </>
+          )}
         </button>
+
+        {validationProblems.length > 0 && (
+          <div className="validation-panel">
+            <p className="validation-panel-title">⚠ Workflow cannot run</p>
+            <ul className="validation-panel-list">
+              {validationProblems.map((problem, i) => (
+                <li key={i}>{problem}</li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {Object.keys(runStatus).length > 0 && (
           <div className="status-panel">
