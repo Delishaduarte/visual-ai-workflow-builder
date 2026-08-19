@@ -1,7 +1,13 @@
 import { Handle, Position } from '@xyflow/react';
 
-// New in Phase 2. Splits out LLM configuration from the prompt itself.
-// All fields are just stored for now — no actual API calls yet (that's Phase 7).
+// Small helper that turns a status word into an icon.
+function statusIcon(status) {
+  if (status === 'success') return '✓';
+  if (status === 'running') return '⏳';
+  if (status === 'error') return '❌';
+  return '○';
+}
+
 export default function LLMNode({ data }) {
   return (
     <div className="node-card" style={{ borderLeft: '4px solid #6366f1' }}>
@@ -9,7 +15,10 @@ export default function LLMNode({ data }) {
       <div className="node-header">
         <div className="node-title-group">
           <span>🤖</span>
-          <span className="node-title">LLM</span>
+          <span className="node-title">
+            LLM
+            {data.runStatus && <span className="node-status-badge">{statusIcon(data.runStatus)}</span>}
+          </span>
         </div>
         <button className="node-delete-btn nodrag" onClick={data.onDelete}>×</button>
       </div>
@@ -54,7 +63,7 @@ export default function LLMNode({ data }) {
           <input
             type="number"
             className="node-input nodrag"
-            placeholder="1000"
+            placeholder="2000"
             value={data.maxTokens ?? ''}
             onChange={(e) => data.onChange({ maxTokens: e.target.value })}
           />

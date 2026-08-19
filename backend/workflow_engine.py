@@ -1,7 +1,8 @@
 import os
 from google import genai
 from models import Workflow, WorkflowNode
-
+import time
+from google.genai import types
 
 class WorkflowError(Exception):
     """Raised when a workflow can't be executed (cycles, bad edges, etc.)."""
@@ -76,11 +77,6 @@ def find_disconnected_nodes(workflow: Workflow):
 
 
 def call_gemini(prompt_text: str, data: dict) -> str:
-    """
-    Sends a real request to the Gemini API using settings from the
-    LLM node's config fields. Falls back to sensible defaults if a
-    field was left empty.
-    """
     client = get_gemini_client()
 
     model = data.get("model") or "gemini-3.6-flash"
@@ -92,18 +88,18 @@ def call_gemini(prompt_text: str, data: dict) -> str:
     except ValueError:
         temperature = 0.7
 
+    
     max_tokens_raw = data.get("maxTokens")
     try:
-        max_tokens = int(max_tokens_raw) if max_tokens_raw else 1000
+        max_tokens = int(max_tokens_raw) if max_tokens_raw else 2000
     except ValueError:
-        max_tokens = 1000
+        max_tokens = 2000
 
-    config = {
-        "temperature": temperature,
-        "max_output_tokens": max_tokens,
-    }
-    if system_prompt:
-        config["system_instruction"] = system_prompt
+    config = types.GenerateContentConfig(
+        temperature=temperature,
+        max_output_tokens=max_tokens,
+        system_instruction=system_prompt if system_prompt else None,
+    )
 
     try:
         response = client.models.generate_content(
@@ -147,37 +143,78 @@ def run_node(node: WorkflowNode, incoming_value):
     raise WorkflowError(f"Unknown node type: {node_type}")
 
 
+
 def execute_workflow(workflow: Workflow):
-    disconnected = find_disconnected_nodes(workflow)
-    if disconnected:
-        raise WorkflowError(f"Workflow has disconnected nodes: {disconnected}")
+        disconnected = find_disconnected_nodes(workflow)
+        if disconnected:
+            raise WorkflowError(f"Workflow has disconnected nodes: {disconnected}")
 
-    execution_order, node_map = topological_sort(workflow)
+        execution_order, node_map = topological_sort(workflow)
 
-    node_outputs = {}
-    incoming_edges = {node_id: [] for node_id in node_map}
-    for edge in workflow.edges:
-        incoming_edges[edge.target].append(edge.source)
+        node_outputs = {}
+        incoming_edges = {node_id: [] for node_id in node_map}
+        for edge in workflow.edges:
+            incoming_edges[edge.target].append(edge.source)
 
-    results = []
+        results = []
 
-    for node_id in execution_order:
-        node = node_map[node_id]
-        sources = incoming_edges[node_id]
-        incoming_value = node_outputs[sources[0]] if sources else None
+        for node_id in execution_order:
+            node = node_map[node_id]
+            sources = incoming_edges[node_id]
+            incoming_value = node_outputs[sources[0]] if sources else None
 
-        try:
-            output = run_node(node, incoming_value)
-        except WorkflowError:
-            raise
-        except Exception as e:
-            raise WorkflowError(f"Error executing node '{node_id}' ({node.type}): {e}")
+            start_time = time.time()
 
-        node_outputs[node_id] = output
-        results.append({"nodeId": node_id, "type": node.type, "output": output})
+            try:
+                output = run_node(node, incoming_value)
+            except WorkflowError as e:
+                duration = round(time.time() - start_time, 3)
+                results.append({
+                    "nodeId": node_id,
+                    "type": node.type,
+                    "status": "error",
+                    "input": incoming_value,
+                    "error": str(e),
+                    "durationSeconds": duration,
+                })
+                # Stop execution here — return everything completed so far
+                # PLUS this failure, instead of raising and losing all progress.
+                return {
+                    "status": "error",
+                    "executionOrder": execution_order,
+                    "results": results,
+                    "failedNodeId": node_id,
+                }
+            except Exception as e:
+                duration = round(time.time() - start_time, 3)
+                results.append({
+                    "nodeId": node_id,
+                    "type": node.type,
+                    "status": "error",
+                    "input": incoming_value,
+                    "error": f"Unexpected error: {e}",
+                    "durationSeconds": duration,
+                })
+                return {
+                    "status": "error",
+                    "executionOrder": execution_order,
+                    "results": results,
+                    "failedNodeId": node_id,
+                }
 
-    return {
-        "status": "success",
-        "executionOrder": execution_order,
-        "results": results,
-    }
+            duration = round(time.time() - start_time, 3)
+            node_outputs[node_id] = output
+            results.append({
+                "nodeId": node_id,
+                "type": node.type,
+                "status": "success",
+                "input": incoming_value,
+                "output": output,
+                "durationSeconds": duration,
+            })
+
+        return {
+            "status": "success",
+            "executionOrder": execution_order,
+            "results": results,
+        }

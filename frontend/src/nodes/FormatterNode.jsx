@@ -1,6 +1,12 @@
 import { Handle, Position } from '@xyflow/react';
 
-// Phase 2: dropdown of fixed format types instead of free text.
+function statusIcon(status) {
+  if (status === 'success') return '✓';
+  if (status === 'running') return '⏳';
+  if (status === 'error') return '❌';
+  return '○';
+}
+
 export default function FormatterNode({ data }) {
   return (
     <div className="node-card" style={{ borderLeft: '4px solid #ec4899' }}>
@@ -8,7 +14,10 @@ export default function FormatterNode({ data }) {
       <div className="node-header">
         <div className="node-title-group">
           <span>⚡</span>
-          <span className="node-title">Formatter</span>
+          <span className="node-title">
+            Formatter
+            {data.runStatus && <span className="node-status-badge">{statusIcon(data.runStatus)}</span>}
+          </span>
         </div>
         <button className="node-delete-btn nodrag" onClick={data.onDelete}>×</button>
       </div>

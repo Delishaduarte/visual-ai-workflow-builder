@@ -1,8 +1,12 @@
 import { Handle, Position } from '@xyflow/react';
 
-// New in Phase 2. Holds a template string with {{variable}} placeholders.
-// We are NOT doing the actual substitution yet — that's backend logic (Phase 6).
-// This node just captures and stores the template text.
+function statusIcon(status) {
+  if (status === 'success') return '✓';
+  if (status === 'running') return '⏳';
+  if (status === 'error') return '❌';
+  return '○';
+}
+
 export default function PromptTemplateNode({ data }) {
   return (
     <div className="node-card" style={{ borderLeft: '4px solid #f59e0b' }}>
@@ -10,7 +14,10 @@ export default function PromptTemplateNode({ data }) {
       <div className="node-header">
         <div className="node-title-group">
           <span>📝</span>
-          <span className="node-title">Prompt Template</span>
+          <span className="node-title">
+            Prompt Template
+            {data.runStatus && <span className="node-status-badge">{statusIcon(data.runStatus)}</span>}
+          </span>
         </div>
         <button className="node-delete-btn nodrag" onClick={data.onDelete}>×</button>
       </div>
