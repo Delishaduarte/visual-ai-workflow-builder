@@ -152,3 +152,16 @@ export function PlayIcon() {
     </svg>
   );
 }
+
+export function IfIcon() {
+  return (
+    <svg {...iconProps}>
+      <circle cx="6" cy="12" r="2" />
+      <path d="M8 12h3" />
+      <path d="M11 12c0-4 3-6 6-6" />
+      <path d="M11 12c0 4 3 6 6 6" />
+      <path d="M17 6l3 0" />
+      <path d="M17 18l3 0" />
+    </svg>
+  );
+}

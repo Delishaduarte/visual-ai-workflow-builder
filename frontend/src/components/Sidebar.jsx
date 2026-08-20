@@ -12,6 +12,7 @@ import {
   UploadIcon,
   SaveIcon,
   NewIcon,
+  IfIcon,
 } from '../icons';
 
 export default function Sidebar({
@@ -61,6 +62,9 @@ export default function Sidebar({
         </div>
         <div className="dndnode" draggable onDragStart={(e) => onDragStart(e, 'llmNode')}>
           <LLMIcon /> LLM
+        </div>
+        <div className="dndnode" draggable onDragStart={(e) => onDragStart(e, 'ifNode')}>
+          <IfIcon />IF Condition
         </div>
         <div className="dndnode" draggable onDragStart={(e) => onDragStart(e, 'formatterNode')}>
           <FormatterIcon /> Formatter

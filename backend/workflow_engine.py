@@ -120,6 +120,16 @@ def run_node(node: WorkflowNode, incoming_value):
     if node_type == "inputNode":
         return data.get("value", "")
 
+    if node_type == "ifNode":
+        operator = data.get("operator", "not_empty")
+        compare_to = data.get("compareValue", "")
+        result = evaluate_condition(incoming_value, operator, compare_to)
+        # The IF node's "output" IS the incoming value, unchanged —
+        # it just decides which branch that value continues down.
+        # We return both the pass-through value AND the boolean result;
+        # execute_workflow uses the boolean to decide which edges to follow.
+        return {"value": incoming_value, "conditionResult": result}
+
     if node_type == "promptTemplateNode":
         template = data.get("template", "")
         # Simple substitution: replace {{ any_variable_name }} with the
@@ -145,76 +155,120 @@ def run_node(node: WorkflowNode, incoming_value):
 
 
 def execute_workflow(workflow: Workflow):
-        disconnected = find_disconnected_nodes(workflow)
-        if disconnected:
-            raise WorkflowError(f"Workflow has disconnected nodes: {disconnected}")
+    disconnected = find_disconnected_nodes(workflow)
+    if disconnected:
+        raise WorkflowError(f"Workflow has disconnected nodes: {disconnected}")
 
-        execution_order, node_map = topological_sort(workflow)
+    execution_order, node_map = topological_sort(workflow)
 
-        node_outputs = {}
-        incoming_edges = {node_id: [] for node_id in node_map}
-        for edge in workflow.edges:
-            incoming_edges[edge.target].append(edge.source)
+    node_outputs = {}
+    incoming_edges = {node_id: [] for node_id in node_map}
+    for edge in workflow.edges:
+        incoming_edges[edge.target].append(edge)
 
-        results = []
+    # Tracks which nodes should be SKIPPED because they sit on the
+    # untaken branch of an IF node. Populated as we go.
+    skipped_node_ids = set()
 
-        for node_id in execution_order:
-            node = node_map[node_id]
-            sources = incoming_edges[node_id]
-            incoming_value = node_outputs[sources[0]] if sources else None
+    results = []
 
-            start_time = time.time()
-
-            try:
-                output = run_node(node, incoming_value)
-            except WorkflowError as e:
-                duration = round(time.time() - start_time, 3)
-                results.append({
-                    "nodeId": node_id,
-                    "type": node.type,
-                    "status": "error",
-                    "input": incoming_value,
-                    "error": str(e),
-                    "durationSeconds": duration,
-                })
-                # Stop execution here — return everything completed so far
-                # PLUS this failure, instead of raising and losing all progress.
-                return {
-                    "status": "error",
-                    "executionOrder": execution_order,
-                    "results": results,
-                    "failedNodeId": node_id,
-                }
-            except Exception as e:
-                duration = round(time.time() - start_time, 3)
-                results.append({
-                    "nodeId": node_id,
-                    "type": node.type,
-                    "status": "error",
-                    "input": incoming_value,
-                    "error": f"Unexpected error: {e}",
-                    "durationSeconds": duration,
-                })
-                return {
-                    "status": "error",
-                    "executionOrder": execution_order,
-                    "results": results,
-                    "failedNodeId": node_id,
-                }
-
-            duration = round(time.time() - start_time, 3)
-            node_outputs[node_id] = output
+    for node_id in execution_order:
+        if node_id in skipped_node_ids:
             results.append({
                 "nodeId": node_id,
-                "type": node.type,
-                "status": "success",
-                "input": incoming_value,
-                "output": output,
-                "durationSeconds": duration,
+                "type": node_map[node_id].type,
+                "status": "skipped",
+                "input": None,
+                "output": None,
+                "durationSeconds": 0,
+            })
+            continue
+
+        node = node_map[node_id]
+        incoming = incoming_edges[node_id]
+        incoming_value = node_outputs[incoming[0].source] if incoming else None
+
+        start_time = time.time()
+
+        try:
+            output = run_node(node, incoming_value)
+        except WorkflowError as e:
+            duration = round(time.time() - start_time, 3)
+            results.append({
+                "nodeId": node_id, "type": node.type, "status": "error",
+                "input": incoming_value, "error": str(e), "durationSeconds": duration,
+            })
+            return {
+                "status": "error", "executionOrder": execution_order,
+                "results": results, "failedNodeId": node_id,
+            }
+        except Exception as e:
+            duration = round(time.time() - start_time, 3)
+            results.append({
+                "nodeId": node_id, "type": node.type, "status": "error",
+                "input": incoming_value, "error": f"Unexpected error: {e}", "durationSeconds": duration,
+            })
+            return {
+                "status": "error", "executionOrder": execution_order,
+                "results": results, "failedNodeId": node_id,
+            }
+
+        duration = round(time.time() - start_time, 3)
+
+        # IF nodes return a dict; every other node returns a plain value.
+        if isinstance(output, dict) and "conditionResult" in output:
+            condition_result = output["conditionResult"]
+            real_output = output["value"]
+            node_outputs[node_id] = real_output
+
+            # Find this node's outgoing edges, split by which handle
+            # (branch) they came from, and mark the UNTAKEN branch's
+            # nodes (and everything downstream of them) as skipped.
+            taken_handle = "true" if condition_result else "false"
+            skipped_handle = "false" if condition_result else "true"
+
+            outgoing = [e for e in workflow.edges if e.source == node_id]
+            skipped_targets = [e.target for e in outgoing if e.sourceHandle == skipped_handle]
+
+            # Walk forward from each skipped target, marking everything
+            # reachable from it as skipped too (a whole skipped sub-branch).
+            to_visit = list(skipped_targets)
+            while to_visit:
+                current = to_visit.pop()
+                if current in skipped_node_ids:
+                    continue
+                skipped_node_ids.add(current)
+                downstream = [e.target for e in workflow.edges if e.source == current]
+                to_visit.extend(downstream)
+
+            results.append({
+                "nodeId": node_id, "type": node.type, "status": "success",
+                "input": incoming_value, "output": real_output,
+                "conditionResult": condition_result, "durationSeconds": duration,
+            })
+        else:
+            node_outputs[node_id] = output
+            results.append({
+                "nodeId": node_id, "type": node.type, "status": "success",
+                "input": incoming_value, "output": output, "durationSeconds": duration,
             })
 
-        return {
-            "status": "success",
-            "executionOrder": execution_order,
-            "results": results,
-        }
+    return {"status": "success", "executionOrder": execution_order, "results": results}
+
+def evaluate_condition(value, operator, compare_to):
+    """
+    Evaluates an IF node's condition. Always works on string comparison
+    for simplicity, since node values flowing through the pipeline are
+    text at this stage.
+    """
+    text = str(value) if value is not None else ""
+    compare_to = compare_to or ""
+
+    if operator == "contains":
+        return compare_to in text
+    if operator == "equals":
+        return text == compare_to
+    if operator == "not_empty":
+        return text.strip() != ""
+
+    raise WorkflowError(f"Unknown IF condition operator: {operator}")

@@ -794,3 +794,8 @@ html.dark .react-flow .react-flow__edge-path {
   margin-bottom: 3px;
   font-size: 13px;
 }
+
+.node-card--if:hover {
+  border-color: #eab308;
+  box-shadow: 0 0 0 3px rgba(234, 179, 8, 0.18), var(--shadow-lg);
+}

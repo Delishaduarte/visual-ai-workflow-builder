@@ -13,6 +13,7 @@ class WorkflowEdge(BaseModel):
     id: str
     source: str
     target: str
+    sourceHandle: str | None = None
 
 
 class Workflow(BaseModel):

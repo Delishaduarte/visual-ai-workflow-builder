@@ -20,6 +20,7 @@ import LLMNode from './nodes/LLMNode';
 import FormatterNode from './nodes/FormatterNode';
 import OutputNode from './nodes/OutputNode';
 import Sidebar from './components/Sidebar';
+import IfNode from './nodes/IfNode';
 
 const nodeTypes = {
   inputNode: InputNode,
@@ -27,6 +28,7 @@ const nodeTypes = {
   llmNode: LLMNode,
   formatterNode: FormatterNode,
   outputNode: OutputNode,
+  ifNode: IfNode,
 };
 
 let idCount = 0;
@@ -204,6 +206,7 @@ function WorkflowCanvas() {
       id: e.id,
       source: e.source,
       target: e.target,
+      sourceHandle: e.sourceHandle,
       animated: e.animated,
     }));
   }, [edges]);
