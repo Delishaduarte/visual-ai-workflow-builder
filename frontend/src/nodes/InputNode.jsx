@@ -24,7 +24,10 @@ export default function InputNode({ data }) {
             )}
           </span>
         </div>
-        <button className="node-delete-btn nodrag" onClick={data.onDelete}>×</button>
+        <div style={{ display: 'flex', gap: '4px' }}>
+          <button className="node-delete-btn nodrag" onClick={data.onDuplicate} title="Duplicate">⧉</button>
+          <button className="node-delete-btn nodrag" onClick={data.onDelete} title="Delete">×</button>
+        </div>
       </div>
       <div className="node-body">
         <div className="node-field">
@@ -35,6 +38,7 @@ export default function InputNode({ data }) {
             placeholder="customer_text"
             value={data.varName || ''}
             onChange={(e) => data.onChange({ varName: e.target.value })}
+            onBlur={data.onCommit}
           />
         </div>
         <div className="node-field">
@@ -45,6 +49,7 @@ export default function InputNode({ data }) {
             placeholder="Enter value..."
             value={data.value || ''}
             onChange={(e) => data.onChange({ value: e.target.value })}
+            onBlur={data.onCommit}
             style={{ resize: 'none' }}
           />
         </div>

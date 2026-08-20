@@ -25,7 +25,10 @@ export default function FormatterNode({ data }) {
             )}
           </span>
         </div>
-        <button className="node-delete-btn nodrag" onClick={data.onDelete}>×</button>
+        <div style={{ display: 'flex', gap: '4px' }}>
+          <button className="node-delete-btn nodrag" onClick={data.onDuplicate} title="Duplicate">⧉</button>
+          <button className="node-delete-btn nodrag" onClick={data.onDelete} title="Delete">×</button>
+        </div>
       </div>
       <div className="node-body">
         <div className="node-field">
@@ -34,6 +37,7 @@ export default function FormatterNode({ data }) {
             className="node-select nodrag"
             value={data.formatType || 'text'}
             onChange={(e) => data.onChange({ formatType: e.target.value })}
+            onBlur={data.onCommit}
           >
             <option value="text">Text</option>
             <option value="json">JSON</option>

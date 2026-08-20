@@ -27,7 +27,10 @@ export default function IfNode({ data }) {
             )}
           </span>
         </div>
-        <button className="node-delete-btn nodrag" onClick={data.onDelete}>×</button>
+        <div style={{ display: 'flex', gap: '4px' }}>
+            <button className="node-delete-btn nodrag" onClick={data.onDuplicate} title="Duplicate">⧉</button>
+            <button className="node-delete-btn nodrag" onClick={data.onDelete} title="Delete">×</button>
+            </div>
       </div>
       <div className="node-body">
         <div className="node-field">
@@ -36,6 +39,7 @@ export default function IfNode({ data }) {
             className="node-select nodrag"
             value={data.operator || 'not_empty'}
             onChange={(e) => data.onChange({ operator: e.target.value })}
+            onBlur={data.onCommit}
           >
             <option value="contains">Contains</option>
             <option value="equals">Equals</option>
@@ -51,6 +55,7 @@ export default function IfNode({ data }) {
               placeholder="text to compare"
               value={data.compareValue || ''}
               onChange={(e) => data.onChange({ compareValue: e.target.value })}
+              onBlur={data.onCommit}
             />
           </div>
         )}

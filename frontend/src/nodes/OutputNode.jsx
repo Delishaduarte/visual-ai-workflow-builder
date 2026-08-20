@@ -25,7 +25,10 @@ export default function OutputNode({ data }) {
             )}
           </span>
         </div>
-        <button className="node-delete-btn nodrag" onClick={data.onDelete}>×</button>
+        <div style={{ display: 'flex', gap: '4px' }}>
+          <button className="node-delete-btn nodrag" onClick={data.onDuplicate} title="Duplicate">⧉</button>
+          <button className="node-delete-btn nodrag" onClick={data.onDelete} title="Delete">×</button>
+        </div>
       </div>
       <div className="node-body">
         <div className="node-field">

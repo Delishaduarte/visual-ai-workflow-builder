@@ -25,7 +25,10 @@ export default function LLMNode({ data }) {
             )}
           </span>
         </div>
-        <button className="node-delete-btn nodrag" onClick={data.onDelete}>×</button>
+        <div style={{ display: 'flex', gap: '4px' }}>
+          <button className="node-delete-btn nodrag" onClick={data.onDuplicate} title="Duplicate">⧉</button>
+          <button className="node-delete-btn nodrag" onClick={data.onDelete} title="Delete">×</button>
+        </div>
       </div>
       <div className="node-body">
         <div className="node-field">
@@ -34,6 +37,7 @@ export default function LLMNode({ data }) {
             className="node-select nodrag"
             value={data.provider || 'openai'}
             onChange={(e) => data.onChange({ provider: e.target.value })}
+            onBlur={data.onCommit}
           >
             <option value="openai">OpenAI</option>
             <option value="anthropic">Anthropic</option>
@@ -48,6 +52,7 @@ export default function LLMNode({ data }) {
             placeholder="gpt-4o-mini"
             value={data.model || ''}
             onChange={(e) => data.onChange({ model: e.target.value })}
+            onBlur={data.onCommit}
           />
         </div>
         <div className="node-field">
@@ -61,6 +66,7 @@ export default function LLMNode({ data }) {
             placeholder="0.7"
             value={data.temperature ?? ''}
             onChange={(e) => data.onChange({ temperature: e.target.value })}
+            onBlur={data.onCommit}
           />
         </div>
         <div className="node-field">
@@ -71,6 +77,7 @@ export default function LLMNode({ data }) {
             placeholder="2000"
             value={data.maxTokens ?? ''}
             onChange={(e) => data.onChange({ maxTokens: e.target.value })}
+            onBlur={data.onCommit}
           />
         </div>
         <div className="node-field">
@@ -81,6 +88,7 @@ export default function LLMNode({ data }) {
             placeholder="You are a helpful assistant..."
             value={data.systemPrompt || ''}
             onChange={(e) => data.onChange({ systemPrompt: e.target.value })}
+            onBlur={data.onCommit}
             style={{ resize: 'none' }}
           />
         </div>

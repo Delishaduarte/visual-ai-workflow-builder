@@ -80,6 +80,7 @@ function statusIcon(status) {
   if (status === 'success') return '✓';
   if (status === 'running') return '●';
   if (status === 'error') return '✕';
+  if (status === 'skipped') return '—';
   return '○';
 }
 
@@ -97,6 +98,7 @@ function writeSavedWorkflows(workflows) {
 }
 
 function WorkflowCanvas() {
+  // ---------- 1. ALL STATE FIRST ----------
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const { screenToFlowPosition } = useReactFlow();
@@ -105,34 +107,89 @@ function WorkflowCanvas() {
   const [isRunning, setIsRunning] = useState(false);
   const [inspectedNodeId, setInspectedNodeId] = useState(null);
   const [validationProblems, setValidationProblems] = useState([]);
+  const [connectionError, setConnectionError] = useState(null);
 
   const [workflowName, setWorkflowName] = useState('My Workflow');
   const [savedWorkflowNames, setSavedWorkflowNames] = useState([]);
-  const [connectionError, setConnectionError] = useState(null);
 
-  // Theme state — lives here, INSIDE the component, since useState/useEffect
-  // must always be called from inside a component or hook, never at the
-  // top level of the file.
   const [theme, setTheme] = useState(() => {
     return localStorage.getItem('visual-ai-workflow-builder:theme') || 'light';
   });
 
+  const [history, setHistory] = useState([{ nodes: initialNodes, edges: initialEdges }]);
+  const [historyIndex, setHistoryIndex] = useState(0);
+
+  // ---------- 2. SIMPLE EFFECTS THAT ONLY DEPEND ON STATE ----------
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
     localStorage.setItem('visual-ai-workflow-builder:theme', theme);
   }, [theme]);
 
-  const toggleTheme = useCallback(() => {
-    setTheme((t) => (t === 'light' ? 'dark' : 'light'));
-  }, []);
-
   useEffect(() => {
     setSavedWorkflowNames(Object.keys(readSavedWorkflows()));
   }, []);
 
+  const toggleTheme = useCallback(() => {
+    setTheme((t) => (t === 'light' ? 'dark' : 'light'));
+  }, []);
+
+  // ---------- 3. HISTORY FUNCTIONS (pushHistory, undo, redo) ----------
+  // These must come before anything that USES them.
+  const pushHistory = useCallback((newNodes, newEdges) => {
+    setHistory((prev) => {
+      const trimmed = prev.slice(0, historyIndex + 1);
+      const snapshot = { nodes: newNodes, edges: newEdges };
+      const updated = [...trimmed, snapshot];
+      return updated.length > 50 ? updated.slice(updated.length - 50) : updated;
+    });
+    setHistoryIndex((prev) => Math.min(prev + 1, 49));
+  }, [historyIndex]);
+
+  const undo = useCallback(() => {
+    if (historyIndex === 0) return;
+    const newIndex = historyIndex - 1;
+    const snapshot = history[newIndex];
+    setNodes(snapshot.nodes);
+    setEdges(snapshot.edges);
+    setHistoryIndex(newIndex);
+  }, [history, historyIndex, setNodes, setEdges]);
+
+  const redo = useCallback(() => {
+    if (historyIndex >= history.length - 1) return;
+    const newIndex = historyIndex + 1;
+    const snapshot = history[newIndex];
+    setNodes(snapshot.nodes);
+    setEdges(snapshot.edges);
+    setHistoryIndex(newIndex);
+  }, [history, historyIndex, setNodes, setEdges]);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+      if (!isCtrlOrCmd) return;
+
+      if (e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+      } else if (e.key === 'y' || (e.key === 'z' && e.shiftKey)) {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [undo, redo]);
+
+  // ---------- 4. EVERYTHING ELSE THAT USES pushHistory ----------
   const onConnect = useCallback(
-    (connection) => setEdges((eds) => addEdge({ ...connection, animated: true }, eds)),
-    [setEdges]
+    (connection) => {
+      setEdges((eds) => {
+        const updated = addEdge({ ...connection, animated: true }, eds);
+        pushHistory(nodes, updated);
+        return updated;
+      });
+    },
+    [nodes, pushHistory, setEdges]
   );
 
   const updateNodeData = useCallback(
@@ -148,12 +205,38 @@ function WorkflowCanvas() {
     [setNodes]
   );
 
+  const commitFieldEdit = useCallback(() => {
+    pushHistory(nodes, edges);
+  }, [nodes, edges, pushHistory]);
+
   const deleteNode = useCallback(
     (nodeId) => {
-      setNodes((nds) => nds.filter((n) => n.id !== nodeId));
-      setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
+      const updatedNodes = nodes.filter((n) => n.id !== nodeId);
+      const updatedEdges = edges.filter((e) => e.source !== nodeId && e.target !== nodeId);
+      setNodes(updatedNodes);
+      setEdges(updatedEdges);
+      pushHistory(updatedNodes, updatedEdges);
     },
-    [setNodes, setEdges]
+    [nodes, edges, setNodes, setEdges, pushHistory]
+  );
+
+  const duplicateNode = useCallback(
+    (nodeId) => {
+      const original = nodes.find((n) => n.id === nodeId);
+      if (!original) return;
+
+      const clone = {
+        ...original,
+        id: getId(),
+        position: { x: original.position.x + 40, y: original.position.y + 40 },
+        data: { ...original.data },
+      };
+
+      const updated = nodes.concat(clone);
+      setNodes(updated);
+      pushHistory(updated, edges);
+    },
+    [nodes, edges, setNodes, pushHistory]
   );
 
   const onDragOver = useCallback((event) => {
@@ -169,9 +252,13 @@ function WorkflowCanvas() {
 
       const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
       const newNode = { id: getId(), type, position, data: {} };
-      setNodes((nds) => nds.concat(newNode));
+      setNodes((nds) => {
+        const updated = nds.concat(newNode);
+        pushHistory(updated, edges);
+        return updated;
+      });
     },
-    [screenToFlowPosition, setNodes]
+    [screenToFlowPosition, setNodes, edges, pushHistory]
   );
 
   const clearCanvas = useCallback(() => {
@@ -291,6 +378,7 @@ function WorkflowCanvas() {
       return;
     }
     setValidationProblems([]);
+    setConnectionError(null);
 
     setIsRunning(true);
     setInspectedNodeId(null);
@@ -303,7 +391,7 @@ function WorkflowCanvas() {
 
     const payload = { nodes: getCleanNodes(), edges: getCleanEdges() };
 
-        let response;
+    let response;
     try {
       const res = await fetch('http://127.0.0.1:8000/workflow/run', {
         method: 'POST',
@@ -340,6 +428,8 @@ function WorkflowCanvas() {
       ...node.data,
       onChange: (newFields) => updateNodeData(node.id, newFields),
       onDelete: () => deleteNode(node.id),
+      onDuplicate: () => duplicateNode(node.id),
+      onCommit: commitFieldEdit,
       runStatus: runStatus[node.id]?.status,
     },
   }));
@@ -384,31 +474,49 @@ function WorkflowCanvas() {
           <Controls />
         </ReactFlow>
 
-                {nodes.length === 0 && (
-                  <div className="empty-canvas-hint">
-                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                      <rect x="4" y="4" width="16" height="16" rx="3" strokeDasharray="3 3" />
-                      <path d="M12 9v6" />
-                      <path d="M9 12h6" />
-                    </svg>
-                    <p>Your canvas is empty</p>
-                    <p style={{ fontSize: '12px', marginTop: '2px' }}>Drag a node from the sidebar to get started</p>
-                  </div>
-                )}
+        {nodes.length === 0 && (
+          <div className="empty-canvas-hint">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <rect x="4" y="4" width="16" height="16" rx="3" strokeDasharray="3 3" />
+              <path d="M12 9v6" />
+              <path d="M9 12h6" />
+            </svg>
+            <p>Your canvas is empty</p>
+            <p style={{ fontSize: '12px', marginTop: '2px' }}>Drag a node from the sidebar to get started</p>
+          </div>
+        )}
 
-                <div className="top-toolbar">
-                  <span className="top-toolbar-name">{workflowName || 'Untitled Workflow'}</span>
-                  <div className="top-toolbar-divider" />
-                  <button className="run-button" onClick={runWorkflow} disabled={isRunning}>
-                    {isRunning ? (
-                      'Running...'
-                    ) : (
-                      <>
-                        <PlayIcon /> Run Workflow
-                      </>
-                    )}
-                  </button>
-                </div>
+        <div className="top-toolbar">
+          <span className="top-toolbar-name">{workflowName || 'Untitled Workflow'}</span>
+          <div className="top-toolbar-divider" />
+          <button
+            className="toolbar-icon-btn"
+            onClick={undo}
+            disabled={historyIndex === 0}
+            title="Undo (Ctrl+Z)"
+          >
+            ↶
+          </button>
+          <button
+            className="toolbar-icon-btn"
+            onClick={redo}
+            disabled={historyIndex >= history.length - 1}
+            title="Redo (Ctrl+Y)"
+          >
+            ↷
+          </button>
+          <div className="top-toolbar-divider" />
+          <button className="run-button" onClick={runWorkflow} disabled={isRunning}>
+            {isRunning ? (
+              'Running...'
+            ) : (
+              <>
+                <PlayIcon /> Run Workflow
+              </>
+            )}
+          </button>
+        </div>
+
         {connectionError && (
           <div className="connection-error-banner">
             <strong>Connection error</strong>
