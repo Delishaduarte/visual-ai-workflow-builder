@@ -28,6 +28,9 @@ export default function Sidebar({
   onLoadWorkflow,
   onDeleteWorkflow,
   onClearCanvas,
+  executionHistory,
+  onViewHistoryRun,
+  onClearHistory,
 }) {
   const fileInputRef = useRef(null);
 
@@ -72,6 +75,9 @@ export default function Sidebar({
           <div className="dndnode" draggable onDragStart={(e) => onDragStart(e, 'httpNode')}>
     HTTP Request
   </div>
+    <div className="dndnode" draggable onDragStart={(e) => onDragStart(e, 'codeNode')}>
+    Code
+  </div>
         <div className="dndnode" draggable onDragStart={(e) => onDragStart(e, 'outputNode')}>
           <OutputIcon /> Output
         </div>
@@ -114,6 +120,21 @@ export default function Sidebar({
         className="hidden-file-input"
         onChange={handleFileSelected}
       />
+
+      <h3 className="sidebar-section-title">Execution History</h3>
+{executionHistory.length === 0 && (
+  <p className="sidebar-desc">No runs yet.</p>
+)}
+{executionHistory.slice().reverse().map((run) => (
+  <div key={run.id} className="saved-workflow-row" onClick={() => onViewHistoryRun(run.id)} style={{ cursor: 'pointer' }}>
+    <span className="saved-workflow-row-name">
+      {run.status === 'success' ? '✓' : '✕'} {run.workflowName} — {new Date(run.timestamp).toLocaleTimeString()}
+    </span>
+  </div>
+))}
+{executionHistory.length > 0 && (
+  <button className="sidebar-btn" onClick={onClearHistory}>Clear History</button>
+)}
 
       <div style={{ marginTop: 'auto' }}>
         <button className="clear-btn" onClick={onClearCanvas}><TrashIcon /> Clear Canvas</button>

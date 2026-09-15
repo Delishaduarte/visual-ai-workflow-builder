@@ -76,6 +76,28 @@ def find_disconnected_nodes(workflow: Workflow):
 
     return [node.id for node in workflow.nodes if node.id not in touched]
 
+def run_python_code(code_string, incoming_value):
+        """
+        Executes a small, constrained Python snippet. The user's code has
+        access to `input_value` and must assign to `result`. Uses a
+        restricted globals dict to limit (not eliminate) what's reachable.
+        NOTE: this is NOT safe for untrusted/public multi-user use — it's
+        acceptable only because this is a single-user local app.
+        """
+        local_scope = {"input_value": incoming_value, "result": None}
+        safe_builtins = {
+            "len": len, "str": str, "int": int, "float": float,
+            "list": list, "dict": dict, "range": range, "sum": sum,
+            "min": min, "max": max, "abs": abs, "round": round,
+            "sorted": sorted, "enumerate": enumerate,
+        }
+        try:
+            exec(code_string, {"__builtins__": safe_builtins}, local_scope)
+        except Exception as e:
+            raise WorkflowError(f"Code Node execution failed: {e}")
+
+        return local_scope.get("result")
+
 
 def call_gemini(prompt_text: str, data: dict) -> str:
     client = get_gemini_client()
@@ -155,6 +177,12 @@ def run_node(node: WorkflowNode, incoming_value):
             end = template.find("}}") + 2
             return template[:start] + str(incoming_value) + template[end:]
         return template
+
+    if node_type == "codeNode":
+        code_string = data.get("code", "")
+        if not code_string.strip():
+            raise WorkflowError("Code Node has no code to run.")
+        return run_python_code(code_string, incoming_value)
 
     if node_type == "llmNode":
         return call_gemini(str(incoming_value), data)

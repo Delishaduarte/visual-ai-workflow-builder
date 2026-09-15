@@ -804,3 +804,8 @@ html.dark .react-flow .react-flow__edge-path {
   border-color: #0ea5e9;
   box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.18), var(--shadow-lg);
 }
+
+.node-card--code:hover {
+  border-color: #64748b;
+  box-shadow: 0 0 0 3px rgba(100, 116, 139, 0.18), var(--shadow-lg);
+}

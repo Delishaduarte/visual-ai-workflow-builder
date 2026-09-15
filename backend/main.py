@@ -3,11 +3,10 @@ load_dotenv()
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from models import Workflow
-from workflow_engine import execute_workflow, WorkflowError
+from models import Workflow, RetryNodeRequest
+from workflow_engine import execute_workflow, WorkflowError, run_node
 
 app = FastAPI()
-
 # Without this, your browser will block requests from localhost:5173
 # to localhost:8000 due to the same-origin security policy (CORS).
 app.add_middleware(
@@ -53,4 +52,25 @@ def run_workflow(workflow: Workflow):
     try:
         return execute_workflow(workflow)
     except WorkflowError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/workflow/retry-node")
+def retry_node(request: RetryNodeRequest):
+    """
+    Re-runs a single node in isolation, given the same incoming value
+    it had during the original failed run. Used by the frontend's
+    Retry button so the user doesn't have to re-run the whole pipeline.
+    """
+    import time
+    start_time = time.time()
+    try:
+        output = run_node(request.node, request.incomingValue)
+        duration = round(time.time() - start_time, 3)
+        return {
+            "status": "success",
+            "output": output,
+            "durationSeconds": duration,
+        }
+    except WorkflowError as e:
+        duration = round(time.time() - start_time, 3)
         raise HTTPException(status_code=400, detail=str(e))

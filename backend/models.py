@@ -19,3 +19,7 @@ class WorkflowEdge(BaseModel):
 class Workflow(BaseModel):
     nodes: List[WorkflowNode]
     edges: List[WorkflowEdge]
+
+class RetryNodeRequest(BaseModel):
+    node: WorkflowNode
+    incomingValue: str | None = None

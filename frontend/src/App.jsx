@@ -15,6 +15,7 @@ import { validateWorkflow } from './validation';
 import { PlayIcon } from './icons';
 import HttpNode from './nodes/HttpNode';
 import InputNode from './nodes/InputNode';
+import CodeNode from './nodes/CodeNode';
 import PromptTemplateNode from './nodes/PromptTemplateNode';
 import LLMNode from './nodes/LLMNode';
 import FormatterNode from './nodes/FormatterNode';
@@ -30,12 +31,14 @@ const nodeTypes = {
   outputNode: OutputNode,
   ifNode: IfNode,
   httpNode: HttpNode,
+  codeNode: CodeNode,
 };
 
 let idCount = 0;
 const getId = () => `node_${Date.now()}_${idCount++}`;
 
 const STORAGE_KEY = 'visual-ai-workflow-builder:saved-workflows';
+const EXECUTION_HISTORY_KEY = 'visual-ai-workflow-builder:execution-history';
 
 const initialNodes = [
   {
@@ -94,6 +97,21 @@ function readSavedWorkflows() {
   }
 }
 
+function readExecutionHistory() {
+  try {
+    const raw = localStorage.getItem(EXECUTION_HISTORY_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeExecutionHistory(historyList) {
+  // Keep only the most recent 20 runs so localStorage doesn't grow unbounded.
+  const trimmed = historyList.slice(-20);
+  localStorage.setItem(EXECUTION_HISTORY_KEY, JSON.stringify(trimmed));
+}
+
 function writeSavedWorkflows(workflows) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(workflows));
 }
@@ -103,7 +121,8 @@ function WorkflowCanvas() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const { screenToFlowPosition } = useReactFlow();
-
+  const [executionHistory, setExecutionHistory] = useState([]);
+  const [viewingHistoryRun, setViewingHistoryRun] = useState(null);
   const [runStatus, setRunStatus] = useState({});
   const [isRunning, setIsRunning] = useState(false);
   const [inspectedNodeId, setInspectedNodeId] = useState(null);
@@ -129,6 +148,10 @@ function WorkflowCanvas() {
   useEffect(() => {
     setSavedWorkflowNames(Object.keys(readSavedWorkflows()));
   }, []);
+
+  useEffect(() => {
+  setExecutionHistory(readExecutionHistory());
+}, []);
 
   const toggleTheme = useCallback(() => {
     setTheme((t) => (t === 'light' ? 'dark' : 'light'));
@@ -324,6 +347,29 @@ function WorkflowCanvas() {
     [setNodes, setEdges]
   );
 
+const viewHistoryRun = useCallback((runId) => {
+  const record = executionHistory.find((r) => r.id === runId);
+  if (!record) return;
+
+  const rebuiltStatus = {};
+  record.results.forEach((r) => {
+    rebuiltStatus[r.nodeId] = r;
+  });
+  setRunStatus(rebuiltStatus);
+  setViewingHistoryRun(record);
+  setInspectedNodeId(null);
+}, [executionHistory]);
+
+const closeHistoryView = useCallback(() => {
+  setViewingHistoryRun(null);
+  setRunStatus({});
+}, []);
+
+const clearExecutionHistory = useCallback(() => {
+  setExecutionHistory([]);
+  localStorage.removeItem(EXECUTION_HISTORY_KEY);
+}, []);
+
   const deleteWorkflow = useCallback((name) => {
     const allSaved = readSavedWorkflows();
     delete allSaved[name];
@@ -371,8 +417,63 @@ function WorkflowCanvas() {
 
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  const runWorkflow = useCallback(async () => {
-    const problems = validateWorkflow(nodes, edges);
+  const retryNode = useCallback(
+  async (nodeId) => {
+    const node = nodes.find((n) => n.id === nodeId);
+    if (!node) return;
+
+    const failedResult = runStatus[nodeId];
+    const incomingValue = failedResult ? failedResult.input : null;
+
+    setRunStatus((prev) => ({ ...prev, [nodeId]: { status: 'running' } }));
+
+    try {
+      const cleanNode = {
+        id: node.id,
+        type: node.type,
+        position: node.position,
+        data: { ...node.data, onChange: undefined, onDelete: undefined, runStatus: undefined },
+      };
+
+      const res = await fetch('http://127.0.0.1:8000/workflow/retry-node', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ node: cleanNode, incomingValue }),
+      });
+
+      if (!res.ok) {
+        const errBody = await res.json();
+        setRunStatus((prev) => ({
+          ...prev,
+          [nodeId]: { status: 'error', input: incomingValue, error: errBody.detail, durationSeconds: 0 },
+        }));
+        return;
+      }
+
+      const result = await res.json();
+      setRunStatus((prev) => ({
+        ...prev,
+        [nodeId]: {
+          status: 'success',
+          input: incomingValue,
+          output: result.output,
+          durationSeconds: result.durationSeconds,
+        },
+      }));
+      updateNodeData(nodeId, { value: result.output });
+    } catch (err) {
+      setRunStatus((prev) => ({
+        ...prev,
+        [nodeId]: { status: 'error', input: incomingValue, error: 'Could not reach the backend.', durationSeconds: 0 },
+      }));
+    }
+  },
+  [nodes, runStatus, updateNodeData]
+);
+
+    const runWorkflow = useCallback(async () => {
+  setViewingHistoryRun(null);
+  const problems = validateWorkflow(nodes, edges);
     if (problems.length > 0) {
       setValidationProblems(problems);
       setConnectionError(null);
@@ -407,7 +508,7 @@ function WorkflowCanvas() {
       return;
     }
 
-    for (const result of response.results) {
+        for (const result of response.results) {
       setRunStatus((prev) => ({ ...prev, [result.nodeId]: { status: 'running' } }));
       await wait(300);
 
@@ -420,8 +521,22 @@ function WorkflowCanvas() {
       await wait(150);
     }
 
+    // Record this run in execution history for later review.
+    const runRecord = {
+      id: `run_${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      workflowName: workflowName || 'Untitled Workflow',
+      status: response.status,
+      results: response.results,
+    };
+    setExecutionHistory((prev) => {
+      const updated = [...prev, runRecord];
+      writeExecutionHistory(updated);
+      return updated.slice(-20);
+    });
+
     setIsRunning(false);
-  }, [nodes, edges, getCleanNodes, getCleanEdges, updateNodeData]);
+  }, [nodes, edges, getCleanNodes, getCleanEdges, updateNodeData, workflowName]);
 
   const nodesWithHandlers = nodes.map((node) => ({
     ...node,
@@ -435,12 +550,17 @@ function WorkflowCanvas() {
     },
   }));
 
+
   const handleNodeClick = useCallback((event, node) => {
     setInspectedNodeId(node.id);
   }, []);
 
   const inspected = inspectedNodeId ? runStatus[inspectedNodeId] : null;
-  const inspectedNode = inspectedNodeId ? nodes.find((n) => n.id === inspectedNodeId) : null;
+const inspectedNode = inspectedNodeId
+  ? (viewingHistoryRun
+      ? viewingHistoryRun.results.find((r) => r.nodeId === inspectedNodeId)
+      : nodes.find((n) => n.id === inspectedNodeId))
+  : null;
 
   return (
     <div className="app-container">
@@ -457,6 +577,9 @@ function WorkflowCanvas() {
         onLoadWorkflow={loadWorkflow}
         onDeleteWorkflow={deleteWorkflow}
         onClearCanvas={clearCanvas}
+        executionHistory={executionHistory}
+        onViewHistoryRun={viewHistoryRun}
+        onClearHistory={clearExecutionHistory}
       />
       <div className="canvas-wrapper">
         <ReactFlow
@@ -536,27 +659,35 @@ function WorkflowCanvas() {
           </div>
         )}
 
-        {Object.keys(runStatus).length > 0 && (
-          <div className="status-panel">
-            <p className="status-panel-title">Execution Status</p>
-            {nodes.map((node) => {
-              const s = runStatus[node.id];
-              if (!s) return null;
-              return (
-                <div key={node.id} className="status-row" onClick={() => setInspectedNodeId(node.id)}>
-                  <span className="status-row-label">
-                    <span>{statusIcon(s.status)}</span>
-                    <span>{node.type.replace('Node', '')}</span>
-                  </span>
-                  {s.durationSeconds !== undefined && (
-                    <span className="status-row-time">{s.durationSeconds}s</span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-
+       {Object.keys(runStatus).length > 0 && (
+  <div className="status-panel">
+    <p className="status-panel-title">
+      {viewingHistoryRun ? `Past Run — ${new Date(viewingHistoryRun.timestamp).toLocaleString()}` : 'Execution Status'}
+    </p>
+    {(viewingHistoryRun ? viewingHistoryRun.results : nodes.map((n) => ({ nodeId: n.id, type: n.type }))).map((entry) => {
+      const nodeId = viewingHistoryRun ? entry.nodeId : entry.nodeId;
+      const nodeType = viewingHistoryRun ? entry.type : entry.type;
+      const s = runStatus[nodeId];
+      if (!s) return null;
+      return (
+        <div key={nodeId} className="status-row" onClick={() => setInspectedNodeId(nodeId)}>
+          <span className="status-row-label">
+            <span>{statusIcon(s.status)}</span>
+            <span>{nodeType.replace('Node', '')}</span>
+          </span>
+          {s.durationSeconds !== undefined && (
+            <span className="status-row-time">{s.durationSeconds}s</span>
+          )}
+        </div>
+      );
+    })}
+    {viewingHistoryRun && (
+      <button className="sidebar-btn" onClick={closeHistoryView} style={{ marginTop: '8px' }}>
+        Close (return to live view)
+      </button>
+    )}
+  </div>
+)}
         {inspected && inspectedNode && (
           <div className="inspect-panel">
             <div className="inspect-panel-header">
@@ -567,11 +698,14 @@ function WorkflowCanvas() {
             </div>
 
             {inspected.status === 'error' ? (
-              <>
-                <p className="inspect-section-label">Error</p>
-                <div className="inspect-section-content inspect-error">{inspected.error}</div>
-              </>
-            ) : (
+  <>
+    <p className="inspect-section-label">Error</p>
+    <div className="inspect-section-content inspect-error">{inspected.error}</div>
+    <button className="sidebar-btn" onClick={() => retryNode(inspectedNodeId)}>
+      Retry this node
+    </button>
+  </>
+) : (
               <>
                 <p className="inspect-section-label">Input</p>
                 <div className="inspect-section-content">
