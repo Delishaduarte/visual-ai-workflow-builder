@@ -3,6 +3,7 @@ from google import genai
 from models import Workflow, WorkflowNode
 import time
 from google.genai import types
+import requests
 
 class WorkflowError(Exception):
     """Raised when a workflow can't be executed (cycles, bad edges, etc.)."""
@@ -129,6 +130,21 @@ def run_node(node: WorkflowNode, incoming_value):
         # We return both the pass-through value AND the boolean result;
         # execute_workflow uses the boolean to decide which edges to follow.
         return {"value": incoming_value, "conditionResult": result}
+    if node_type == "httpNode":
+        url = data.get("url", "")
+        method = data.get("method", "GET").upper()
+        if not url:
+            raise WorkflowError("HTTP Node has no URL set.")
+        try:
+            if method == "GET":
+                resp = requests.get(url, timeout=10)
+            elif method == "POST":
+                resp = requests.post(url, data=str(incoming_value), timeout=10)
+            else:
+                raise WorkflowError(f"Unsupported HTTP method: {method}")
+            return f"[{resp.status_code}] {resp.text[:500]}"
+        except requests.RequestException as e:
+            raise WorkflowError(f"HTTP request failed: {e}")
 
     if node_type == "promptTemplateNode":
         template = data.get("template", "")

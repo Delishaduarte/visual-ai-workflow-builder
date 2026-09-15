@@ -69,6 +69,9 @@ export default function Sidebar({
         <div className="dndnode" draggable onDragStart={(e) => onDragStart(e, 'formatterNode')}>
           <FormatterIcon /> Formatter
         </div>
+          <div className="dndnode" draggable onDragStart={(e) => onDragStart(e, 'httpNode')}>
+    HTTP Request
+  </div>
         <div className="dndnode" draggable onDragStart={(e) => onDragStart(e, 'outputNode')}>
           <OutputIcon /> Output
         </div>

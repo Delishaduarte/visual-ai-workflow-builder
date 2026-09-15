@@ -13,7 +13,7 @@ import '@xyflow/react/dist/style.css';
 import './App.css';
 import { validateWorkflow } from './validation';
 import { PlayIcon } from './icons';
-
+import HttpNode from './nodes/HttpNode';
 import InputNode from './nodes/InputNode';
 import PromptTemplateNode from './nodes/PromptTemplateNode';
 import LLMNode from './nodes/LLMNode';
@@ -29,6 +29,7 @@ const nodeTypes = {
   formatterNode: FormatterNode,
   outputNode: OutputNode,
   ifNode: IfNode,
+  httpNode: HttpNode,
 };
 
 let idCount = 0;

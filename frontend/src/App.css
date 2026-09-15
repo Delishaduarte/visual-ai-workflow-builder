@@ -799,3 +799,8 @@ html.dark .react-flow .react-flow__edge-path {
   border-color: #eab308;
   box-shadow: 0 0 0 3px rgba(234, 179, 8, 0.18), var(--shadow-lg);
 }
+
+.node-card--http:hover {
+  border-color: #0ea5e9;
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.18), var(--shadow-lg);
+}
