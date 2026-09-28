@@ -64,7 +64,7 @@ def retry_node(request: RetryNodeRequest):
     import time
     start_time = time.time()
     try:
-        output = run_node(request.node, request.incomingValue)
+        output = run_node(request.node, request.incomingValue, request.variables)
         duration = round(time.time() - start_time, 3)
         return {
             "status": "success",

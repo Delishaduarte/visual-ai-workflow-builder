@@ -5,6 +5,7 @@ import time
 from google.genai import types
 import requests
 import json
+import re
 
 class WorkflowError(Exception):
     """Raised when a workflow can't be executed (cycles, bad edges, etc.)."""
@@ -136,8 +137,28 @@ def call_gemini(prompt_text: str, data: dict) -> str:
 
     return response.text
 
+def fill_template(template, variables, incoming_value):
+    """
+    Replaces every {{name}} in the template.
+    {{input}} is the output of the previous node.
+    Any other name must be a variable defined by an upstream Input node.
+    """
+    def replace(match):
+        name = match.group(1).strip()
+        if name == "input":
+            return "" if incoming_value is None else str(incoming_value)
+        if name in variables:
+            return str(variables[name])
+        available = ", ".join(sorted(variables)) or "none"
+        raise WorkflowError(
+            "Prompt Template uses {{" + name + "}} but no upstream Input is named '"
+            + name + "'. Available variables: " + available
+        )
 
-def run_node(node: WorkflowNode, incoming_value):
+    return re.sub(r"\{\{\s*([^{}]+?)\s*\}\}", replace, template)
+
+
+def run_node(node: WorkflowNode, incoming_value, variables=None):
     node_type = node.type
     data = node.data
 
@@ -185,13 +206,14 @@ def run_node(node: WorkflowNode, incoming_value):
 
     if node_type == "promptTemplateNode":
         template = data.get("template", "")
+        return fill_template(template, variables or {}, incoming_value)
         # Simple substitution: replace {{ any_variable_name }} with the
         # incoming value. Only supports ONE variable for now.
-        if "{{" in template and "}}" in template:
-            start = template.find("{{")
-            end = template.find("}}") + 2
-            return template[:start] + str(incoming_value) + template[end:]
-        return template
+        # if "{{" in template and "}}" in template:
+        #     start = template.find("{{")
+        #     end = template.find("}}") + 2
+        #     return template[:start] + str(incoming_value) + template[end:]
+        # return template
 
     if node_type == "codeNode":
         code_string = data.get("code", "")
@@ -229,6 +251,7 @@ def execute_workflow(workflow: Workflow):
     execution_order, node_map = topological_sort(workflow)
 
     node_outputs = {}
+    node_vars = {}  # node id -> variables visible after that node runs
     skipped_node_ids = set()
     taken_handles = {}  # IF node id -> "true" or "false"
 
@@ -252,7 +275,6 @@ def execute_workflow(workflow: Workflow):
         incoming = incoming_edges[node_id]
         live_edges = [e for e in incoming if edge_is_live(e)]
 
-        # A node is skipped only when it HAS incoming edges and none are live.
         if incoming and not live_edges:
             skipped_node_ids.add(node_id)
             results.append({
@@ -262,20 +284,32 @@ def execute_workflow(workflow: Workflow):
             continue
 
         if node.type == "mergeNode":
-            ordered = sorted(live_edges, key=lambda e: handle_number(e.targetHandle))
-            incoming_value = [node_outputs[e.source] for e in ordered]
+            source_edges = sorted(live_edges, key=lambda e: handle_number(e.targetHandle))
+            incoming_value = [node_outputs[e.source] for e in source_edges]
         else:
-            incoming_value = node_outputs[live_edges[0].source] if live_edges else None
+            source_edges = live_edges[:1]
+            incoming_value = node_outputs[source_edges[0].source] if source_edges else None
+
+        # Variables visible to this node: everything defined upstream,
+        # plus this node's own name if it is an Input.
+        variables = {}
+        for e in source_edges:
+            variables.update(node_vars.get(e.source, {}))
+        if node.type == "inputNode":
+            var_name = str(node.data.get("varName") or "").strip()
+            if var_name:
+                variables[var_name] = node.data.get("value", "")
 
         start_time = time.time()
 
         try:
-            output = run_node(node, incoming_value)
+            output = run_node(node, incoming_value, variables)
         except WorkflowError as e:
             duration = round(time.time() - start_time, 3)
             results.append({
                 "nodeId": node_id, "type": node.type, "status": "error",
-                "input": incoming_value, "error": str(e), "durationSeconds": duration,
+                "input": incoming_value, "variables": variables,
+                "error": str(e), "durationSeconds": duration,
             })
             return {
                 "status": "error", "executionOrder": execution_order,
@@ -285,7 +319,8 @@ def execute_workflow(workflow: Workflow):
             duration = round(time.time() - start_time, 3)
             results.append({
                 "nodeId": node_id, "type": node.type, "status": "error",
-                "input": incoming_value, "error": f"Unexpected error: {e}", "durationSeconds": duration,
+                "input": incoming_value, "variables": variables,
+                "error": f"Unexpected error: {e}", "durationSeconds": duration,
             })
             return {
                 "status": "error", "executionOrder": execution_order,
@@ -293,22 +328,23 @@ def execute_workflow(workflow: Workflow):
             }
 
         duration = round(time.time() - start_time, 3)
+        node_vars[node_id] = variables
 
         if isinstance(output, dict) and "conditionResult" in output:
-            # IF node: remember which branch was taken; downstream edges
-            # on the other branch become dead.
             taken_handles[node_id] = "true" if output["conditionResult"] else "false"
             node_outputs[node_id] = output["value"]
             results.append({
                 "nodeId": node_id, "type": node.type, "status": "success",
                 "input": incoming_value, "output": output["value"],
-                "conditionResult": output["conditionResult"], "durationSeconds": duration,
+                "conditionResult": output["conditionResult"],
+                "variables": variables, "durationSeconds": duration,
             })
         else:
             node_outputs[node_id] = output
             results.append({
                 "nodeId": node_id, "type": node.type, "status": "success",
-                "input": incoming_value, "output": output, "durationSeconds": duration,
+                "input": incoming_value, "output": output,
+                "variables": variables, "durationSeconds": duration,
             })
 
     return {"status": "success", "executionOrder": execution_order, "results": results}

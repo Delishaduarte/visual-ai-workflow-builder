@@ -59,7 +59,7 @@ const initialNodes = [
     id: 'llm-1',
     type: 'llmNode',
     position: { x: 630, y: 200 },
-    data: { provider: 'openai', model: 'gemini-3.6-flash', temperature: '0.7', maxTokens: '2000', systemPrompt: '' },
+    data: { provider: 'gemini', model: 'gemini-3.6-flash', temperature: '0.7', maxTokens: '2000', systemPrompt: '' },
   },
   {
     id: 'formatter-1',
@@ -99,6 +99,10 @@ function readSavedWorkflows() {
   }
 }
 
+function writeSavedWorkflows(workflows) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(workflows));
+}
+
 function readExecutionHistory() {
   try {
     const raw = localStorage.getItem(EXECUTION_HISTORY_KEY);
@@ -109,13 +113,8 @@ function readExecutionHistory() {
 }
 
 function writeExecutionHistory(historyList) {
-  // Keep only the most recent 20 runs so localStorage doesn't grow unbounded.
   const trimmed = historyList.slice(-20);
   localStorage.setItem(EXECUTION_HISTORY_KEY, JSON.stringify(trimmed));
-}
-
-function writeSavedWorkflows(workflows) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(workflows));
 }
 
 // Renumbers each Merge node's connected input dots to 1, 2, 3...
@@ -156,6 +155,7 @@ function WorkflowCanvas() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const { screenToFlowPosition } = useReactFlow();
+
   const [executionHistory, setExecutionHistory] = useState([]);
   const [viewingHistoryRun, setViewingHistoryRun] = useState(null);
   const [runStatus, setRunStatus] = useState({});
@@ -185,8 +185,8 @@ function WorkflowCanvas() {
   }, []);
 
   useEffect(() => {
-  setExecutionHistory(readExecutionHistory());
-}, []);
+    setExecutionHistory(readExecutionHistory());
+  }, []);
 
   const toggleTheme = useCallback(() => {
     setTheme((t) => (t === 'light' ? 'dark' : 'light'));
@@ -205,46 +205,52 @@ function WorkflowCanvas() {
   }, [historyIndex]);
 
   const handleDelete = useCallback(
-  ({ nodes: deletedNodes, edges: deletedEdges }) => {
-    const deletedNodeIds = new Set(deletedNodes.map((n) => n.id));
-    const deletedEdgeIds = new Set(deletedEdges.map((e) => e.id));
+    ({ nodes: deletedNodes, edges: deletedEdges }) => {
+      const deletedNodeIds = new Set(deletedNodes.map((n) => n.id));
+      const deletedEdgeIds = new Set(deletedEdges.map((e) => e.id));
 
-    const remainingNodes = nodes.filter((n) => !deletedNodeIds.has(n.id));
-    const remainingEdges = edges.filter(
-      (e) =>
-        !deletedEdgeIds.has(e.id) &&
-        !deletedNodeIds.has(e.source) &&
-        !deletedNodeIds.has(e.target)
-    );
-    const compacted = compactMergeHandles(remainingNodes, remainingEdges);
+      const remainingNodes = nodes.filter((n) => !deletedNodeIds.has(n.id));
+      const remainingEdges = edges.filter(
+        (e) =>
+          !deletedEdgeIds.has(e.id) &&
+          !deletedNodeIds.has(e.source) &&
+          !deletedNodeIds.has(e.target)
+      );
+      const compacted = compactMergeHandles(remainingNodes, remainingEdges);
 
-    setEdges(compacted);
-    pushHistory(remainingNodes, compacted);
-  },
-  [nodes, edges, setEdges, pushHistory]
-);
+      setEdges(compacted);
+      pushHistory(remainingNodes, compacted);
+    },
+    [nodes, edges, setEdges, pushHistory]
+  );
 
-const undo = useCallback(() => {
-  if (historyIndex === 0) return;
-  const newIndex = historyIndex - 1;
-  const snapshot = history[newIndex];
-  setNodes(withoutRunResults(snapshot.nodes));
-  setEdges(snapshot.edges);
-  setRunStatus({});
-  setInspectedNodeId(null);
-  setHistoryIndex(newIndex);
-}, [history, historyIndex, setNodes, setEdges]);
+  // Undo/redo restore a past snapshot. Run results (Output values) and
+  // the status panel describe a RUN, not the canvas, so they are wiped
+  // here rather than restored — otherwise an old result could reappear
+  // next to nodes it no longer matches.
+  const undo = useCallback(() => {
+    if (historyIndex === 0) return;
+    const newIndex = historyIndex - 1;
+    const snapshot = history[newIndex];
+    setNodes(withoutRunResults(snapshot.nodes));
+    setEdges(snapshot.edges);
+    setRunStatus({});
+    setInspectedNodeId(null);
+    setValidationProblems([]);
+    setHistoryIndex(newIndex);
+  }, [history, historyIndex, setNodes, setEdges]);
 
-const redo = useCallback(() => {
-  if (historyIndex >= history.length - 1) return;
-  const newIndex = historyIndex + 1;
-  const snapshot = history[newIndex];
-  setNodes(withoutRunResults(snapshot.nodes));
-  setEdges(snapshot.edges);
-  setRunStatus({});
-  setInspectedNodeId(null);
-  setHistoryIndex(newIndex);
-}, [history, historyIndex, setNodes, setEdges]);
+  const redo = useCallback(() => {
+    if (historyIndex >= history.length - 1) return;
+    const newIndex = historyIndex + 1;
+    const snapshot = history[newIndex];
+    setNodes(withoutRunResults(snapshot.nodes));
+    setEdges(snapshot.edges);
+    setRunStatus({});
+    setInspectedNodeId(null);
+    setValidationProblems([]);
+    setHistoryIndex(newIndex);
+  }, [history, historyIndex, setNodes, setEdges]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -276,16 +282,16 @@ const redo = useCallback(() => {
   );
 
   // Clears the result shown on Output nodes. Input nodes keep their
-// typed value, because that value is user input, not a run result.
-const clearOutputResults = useCallback(() => {
-  setNodes((currentNodes) =>
-    currentNodes.map((node) =>
-      node.type === 'outputNode'
-        ? { ...node, data: { ...node.data, value: '' } }
-        : node
-    )
-  );
-}, [setNodes]);
+  // typed value, because that value is user input, not a run result.
+  const clearOutputResults = useCallback(() => {
+    setNodes((currentNodes) =>
+      currentNodes.map((node) =>
+        node.type === 'outputNode'
+          ? { ...node, data: { ...node.data, value: '' } }
+          : node
+      )
+    );
+  }, [setNodes]);
 
   const updateNodeData = useCallback(
     (nodeId, newFields) => {
@@ -305,16 +311,16 @@ const clearOutputResults = useCallback(() => {
   }, [nodes, edges, pushHistory]);
 
   const deleteNode = useCallback(
-  (nodeId) => {
-    const updatedNodes = nodes.filter((n) => n.id !== nodeId);
-    const remainingEdges = edges.filter((e) => e.source !== nodeId && e.target !== nodeId);
-    const updatedEdges = compactMergeHandles(updatedNodes, remainingEdges);
-    setNodes(updatedNodes);
-    setEdges(updatedEdges);
-    pushHistory(updatedNodes, updatedEdges);
-  },
-  [nodes, edges, setNodes, setEdges, pushHistory]
-);
+    (nodeId) => {
+      const updatedNodes = nodes.filter((n) => n.id !== nodeId);
+      const remainingEdges = edges.filter((e) => e.source !== nodeId && e.target !== nodeId);
+      const updatedEdges = compactMergeHandles(updatedNodes, remainingEdges);
+      setNodes(updatedNodes);
+      setEdges(updatedEdges);
+      pushHistory(updatedNodes, updatedEdges);
+    },
+    [nodes, edges, setNodes, setEdges, pushHistory]
+  );
 
   const duplicateNode = useCallback(
     (nodeId) => {
@@ -379,6 +385,8 @@ const clearOutputResults = useCallback(() => {
         ...n.data,
         onChange: undefined,
         onDelete: undefined,
+        onDuplicate: undefined,
+        onCommit: undefined,
         runStatus: undefined,
         dotCount: undefined,
       },
@@ -421,28 +429,28 @@ const clearOutputResults = useCallback(() => {
     [setNodes, setEdges]
   );
 
-const viewHistoryRun = useCallback((runId) => {
-  const record = executionHistory.find((r) => r.id === runId);
-  if (!record) return;
+  const viewHistoryRun = useCallback((runId) => {
+    const record = executionHistory.find((r) => r.id === runId);
+    if (!record) return;
 
-  const rebuiltStatus = {};
-  record.results.forEach((r) => {
-    rebuiltStatus[r.nodeId] = r;
-  });
-  setRunStatus(rebuiltStatus);
-  setViewingHistoryRun(record);
-  setInspectedNodeId(null);
-}, [executionHistory]);
+    const rebuiltStatus = {};
+    record.results.forEach((r) => {
+      rebuiltStatus[r.nodeId] = r;
+    });
+    setRunStatus(rebuiltStatus);
+    setViewingHistoryRun(record);
+    setInspectedNodeId(null);
+  }, [executionHistory]);
 
-const closeHistoryView = useCallback(() => {
-  setViewingHistoryRun(null);
-  setRunStatus({});
-}, []);
+  const closeHistoryView = useCallback(() => {
+    setViewingHistoryRun(null);
+    setRunStatus({});
+  }, []);
 
-const clearExecutionHistory = useCallback(() => {
-  setExecutionHistory([]);
-  localStorage.removeItem(EXECUTION_HISTORY_KEY);
-}, []);
+  const clearExecutionHistory = useCallback(() => {
+    setExecutionHistory([]);
+    localStorage.removeItem(EXECUTION_HISTORY_KEY);
+  }, []);
 
   const deleteWorkflow = useCallback((name) => {
     const allSaved = readSavedWorkflows();
@@ -491,71 +499,84 @@ const clearExecutionHistory = useCallback(() => {
 
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+  // Retries a single failed node, sending back the same input AND the
+  // same variables it had during the original run, so a Prompt
+  // Template that used {{customer_name}} still resolves correctly.
   const retryNode = useCallback(
-  async (nodeId) => {
-    const node = nodes.find((n) => n.id === nodeId);
-    if (!node) return;
+    async (nodeId) => {
+      const node = nodes.find((n) => n.id === nodeId);
+      if (!node) return;
 
-    const failedResult = runStatus[nodeId];
-    const incomingValue = failedResult ? failedResult.input : null;
+      const failedResult = runStatus[nodeId];
+      const incomingValue = failedResult ? failedResult.input : null;
+      const variables = failedResult && failedResult.variables ? failedResult.variables : {};
 
-    setRunStatus((prev) => ({ ...prev, [nodeId]: { status: 'running' } }));
+      setRunStatus((prev) => ({ ...prev, [nodeId]: { status: 'running' } }));
 
-    try {
-      const cleanNode = {
-        id: node.id,
-        type: node.type,
-        position: node.position,
-        data: { ...node.data, onChange: undefined, onDelete: undefined, runStatus: undefined },
-      };
+      try {
+        const cleanNode = {
+          id: node.id,
+          type: node.type,
+          position: node.position,
+          data: {
+            ...node.data,
+            onChange: undefined,
+            onDelete: undefined,
+            onDuplicate: undefined,
+            onCommit: undefined,
+            runStatus: undefined,
+            dotCount: undefined,
+          },
+        };
 
-      const res = await fetch('http://127.0.0.1:8000/workflow/retry-node', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ node: cleanNode, incomingValue }),
-      });
+        const res = await fetch('http://127.0.0.1:8000/workflow/retry-node', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ node: cleanNode, incomingValue, variables }),
+        });
 
-      if (!res.ok) {
-        const errBody = await res.json();
+        if (!res.ok) {
+          const errBody = await res.json();
+          setRunStatus((prev) => ({
+            ...prev,
+            [nodeId]: { status: 'error', input: incomingValue, variables, error: errBody.detail, durationSeconds: 0 },
+          }));
+          return;
+        }
+
+        const result = await res.json();
         setRunStatus((prev) => ({
           ...prev,
-          [nodeId]: { status: 'error', input: incomingValue, error: errBody.detail, durationSeconds: 0 },
+          [nodeId]: {
+            status: 'success',
+            input: incomingValue,
+            variables,
+            output: result.output,
+            durationSeconds: result.durationSeconds,
+          },
         }));
-        return;
+        updateNodeData(nodeId, { value: result.output });
+      } catch (err) {
+        setRunStatus((prev) => ({
+          ...prev,
+          [nodeId]: { status: 'error', input: incomingValue, variables, error: 'Could not reach the backend.', durationSeconds: 0 },
+        }));
       }
-
-      const result = await res.json();
-      setRunStatus((prev) => ({
-        ...prev,
-        [nodeId]: {
-          status: 'success',
-          input: incomingValue,
-          output: result.output,
-          durationSeconds: result.durationSeconds,
-        },
-      }));
-      updateNodeData(nodeId, { value: result.output });
-    } catch (err) {
-      setRunStatus((prev) => ({
-        ...prev,
-        [nodeId]: { status: 'error', input: incomingValue, error: 'Could not reach the backend.', durationSeconds: 0 },
-      }));
-    }
-  },
-  [nodes, runStatus, updateNodeData]
-);
+    },
+    [nodes, runStatus, updateNodeData]
+  );
 
   const runWorkflow = useCallback(async () => {
-  setViewingHistoryRun(null);
-  const problems = validateWorkflow(nodes, edges);
-  if (problems.length > 0) {
-    setRunStatus({});
-    setInspectedNodeId(null);
-    clearOutputResults();
-    setValidationProblems(problems);
-    setConnectionError(null);
-    return;
-  }
+    setViewingHistoryRun(null);
+    const problems = validateWorkflow(nodes, edges);
+    if (problems.length > 0) {
+      setRunStatus({});
+      setInspectedNodeId(null);
+      clearOutputResults();
+      setValidationProblems(problems);
+      setConnectionError(null);
+      return;
+    }
     setValidationProblems([]);
     setConnectionError(null);
     clearOutputResults();
@@ -586,7 +607,7 @@ const clearExecutionHistory = useCallback(() => {
       return;
     }
 
-        for (const result of response.results) {
+    for (const result of response.results) {
       setRunStatus((prev) => ({ ...prev, [result.nodeId]: { status: 'running' } }));
       await wait(300);
 
@@ -599,7 +620,6 @@ const clearExecutionHistory = useCallback(() => {
       await wait(150);
     }
 
-    // Record this run in execution history for later review.
     const runRecord = {
       id: `run_${Date.now()}`,
       timestamp: new Date().toISOString(),
@@ -641,17 +661,16 @@ const clearExecutionHistory = useCallback(() => {
     };
   });
 
-
   const handleNodeClick = useCallback((event, node) => {
     setInspectedNodeId(node.id);
   }, []);
 
   const inspected = inspectedNodeId ? runStatus[inspectedNodeId] : null;
-const inspectedNode = inspectedNodeId
-  ? (viewingHistoryRun
-      ? viewingHistoryRun.results.find((r) => r.nodeId === inspectedNodeId)
-      : nodes.find((n) => n.id === inspectedNodeId))
-  : null;
+  const inspectedNode = inspectedNodeId
+    ? (viewingHistoryRun
+        ? viewingHistoryRun.results.find((r) => r.nodeId === inspectedNodeId)
+        : nodes.find((n) => n.id === inspectedNodeId))
+    : null;
 
   return (
     <div className="app-container">
@@ -751,35 +770,36 @@ const inspectedNode = inspectedNodeId
           </div>
         )}
 
-       {Object.keys(runStatus).length > 0 && (
-  <div className="status-panel">
-    <p className="status-panel-title">
-      {viewingHistoryRun ? `Past Run — ${new Date(viewingHistoryRun.timestamp).toLocaleString()}` : 'Execution Status'}
-    </p>
-    {(viewingHistoryRun ? viewingHistoryRun.results : nodes.map((n) => ({ nodeId: n.id, type: n.type }))).map((entry) => {
-      const nodeId = viewingHistoryRun ? entry.nodeId : entry.nodeId;
-      const nodeType = viewingHistoryRun ? entry.type : entry.type;
-      const s = runStatus[nodeId];
-      if (!s) return null;
-      return (
-        <div key={nodeId} className="status-row" onClick={() => setInspectedNodeId(nodeId)}>
-          <span className="status-row-label">
-            <span>{statusIcon(s.status)}</span>
-            <span>{nodeType.replace('Node', '')}</span>
-          </span>
-          {s.durationSeconds !== undefined && (
-            <span className="status-row-time">{s.durationSeconds}s</span>
-          )}
-        </div>
-      );
-    })}
-    {viewingHistoryRun && (
-      <button className="sidebar-btn" onClick={closeHistoryView} style={{ marginTop: '8px' }}>
-        Close (return to live view)
-      </button>
-    )}
-  </div>
-)}
+        {Object.keys(runStatus).length > 0 && (
+          <div className="status-panel">
+            <p className="status-panel-title">
+              {viewingHistoryRun ? `Past Run — ${new Date(viewingHistoryRun.timestamp).toLocaleString()}` : 'Execution Status'}
+            </p>
+            {(viewingHistoryRun ? viewingHistoryRun.results : nodes.map((n) => ({ nodeId: n.id, type: n.type }))).map((entry) => {
+              const nodeId = entry.nodeId;
+              const nodeType = entry.type;
+              const s = runStatus[nodeId];
+              if (!s) return null;
+              return (
+                <div key={nodeId} className="status-row" onClick={() => setInspectedNodeId(nodeId)}>
+                  <span className="status-row-label">
+                    <span>{statusIcon(s.status)}</span>
+                    <span>{nodeType.replace('Node', '')}</span>
+                  </span>
+                  {s.durationSeconds !== undefined && (
+                    <span className="status-row-time">{s.durationSeconds}s</span>
+                  )}
+                </div>
+              );
+            })}
+            {viewingHistoryRun && (
+              <button className="sidebar-btn" onClick={closeHistoryView} style={{ marginTop: '8px' }}>
+                Close (return to live view)
+              </button>
+            )}
+          </div>
+        )}
+
         {inspected && inspectedNode && (
           <div className="inspect-panel">
             <div className="inspect-panel-header">
@@ -790,14 +810,14 @@ const inspectedNode = inspectedNodeId
             </div>
 
             {inspected.status === 'error' ? (
-  <>
-    <p className="inspect-section-label">Error</p>
-    <div className="inspect-section-content inspect-error">{inspected.error}</div>
-    <button className="sidebar-btn" onClick={() => retryNode(inspectedNodeId)}>
-      Retry this node
-    </button>
-  </>
-) : (
+              <>
+                <p className="inspect-section-label">Error</p>
+                <div className="inspect-section-content inspect-error">{inspected.error}</div>
+                <button className="sidebar-btn" onClick={() => retryNode(inspectedNodeId)}>
+                  Retry this node
+                </button>
+              </>
+            ) : (
               <>
                 <p className="inspect-section-label">Input</p>
                 <div className="inspect-section-content">

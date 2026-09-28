@@ -24,4 +24,5 @@ class Workflow(BaseModel):
 class RetryNodeRequest(BaseModel):
     node: WorkflowNode
     incomingValue: Any = None
+    variables: Dict[str, Any] = {}
 

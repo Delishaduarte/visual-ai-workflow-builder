@@ -78,6 +78,28 @@ function checkRequiredFields(node) {
   return null;
 }
 
+// Names of all variables defined by Input nodes upstream of a node.
+function upstreamVariableNames(nodeId, nodes, edges) {
+  const names = new Set();
+  const visited = new Set();
+  const stack = [nodeId];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    edges
+      .filter((e) => e.target === current)
+      .forEach((e) => {
+        if (visited.has(e.source)) return;
+        visited.add(e.source);
+        const source = nodes.find((n) => n.id === e.source);
+        if (source && source.type === 'inputNode' && source.data?.varName?.trim()) {
+          names.add(source.data.varName.trim());
+        }
+        stack.push(e.source);
+      });
+  }
+  return names;
+}
+
 // Main entry point. Returns an array of warning strings.
 // Empty array = workflow is valid and can run.
 export function validateWorkflow(nodes, edges) {
@@ -140,6 +162,34 @@ export function validateWorkflow(nodes, edges) {
         const label = TYPE_LABELS[node.type] || node.type;
         problems.push(`${label} has ${incomingCount} incoming connections. Use a Merge Node to combine them.`);
       }
+    });
+
+      // Prompt Template placeholders must match an upstream Input's variable name.
+  nodes
+    .filter((n) => n.type === 'promptTemplateNode')
+    .forEach((node) => {
+      const template = node.data?.template || '';
+      const available = upstreamVariableNames(node.id, nodes, edges);
+      const used = [...template.matchAll(/\{\{\s*([^{}]+?)\s*\}\}/g)].map((m) => m[1].trim());
+      [...new Set(used)]
+        .filter((name) => name !== 'input' && !available.has(name))
+        .forEach((name) => {
+          const list = available.size ? [...available].join(', ') : 'none';
+          problems.push(`Prompt Template uses {{${name}}} but no upstream Input is named "${name}". Available: ${list}`);
+        });
+    });
+
+  // Two Inputs with the same variable name make the value ambiguous.
+  const seenNames = new Set();
+  nodes
+    .filter((n) => n.type === 'inputNode')
+    .forEach((n) => {
+      const name = n.data?.varName?.trim();
+      if (!name) return;
+      if (seenNames.has(name)) {
+        problems.push(`More than one Input Node is named "${name}". Give each Input a different Variable Name.`);
+      }
+      seenNames.add(name);
     });
 
   return problems;
