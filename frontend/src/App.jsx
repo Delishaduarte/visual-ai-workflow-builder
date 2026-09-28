@@ -118,6 +118,39 @@ function writeSavedWorkflows(workflows) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(workflows));
 }
 
+// Renumbers each Merge node's connected input dots to 1, 2, 3...
+// keeping their current order, so deleting a wire never leaves an
+// empty dot in between. Values keep their order; only the holes close.
+function compactMergeHandles(nodes, edges) {
+  const dotNumber = (handle) => parseInt(handle.split('-')[1], 10);
+  const newHandle = {};
+
+  nodes
+    .filter((n) => n.type === 'mergeNode')
+    .forEach((mergeNode) => {
+      edges
+        .filter((e) => e.target === mergeNode.id && e.targetHandle && e.targetHandle.startsWith('in-'))
+        .sort((a, b) => dotNumber(a.targetHandle) - dotNumber(b.targetHandle))
+        .forEach((edge, index) => {
+          newHandle[edge.id] = `in-${index + 1}`;
+        });
+    });
+
+  return edges.map((e) =>
+    newHandle[e.id] && newHandle[e.id] !== e.targetHandle
+      ? { ...e, targetHandle: newHandle[e.id] }
+      : e
+  );
+}
+
+// Run results are stored on Output nodes (data.value). They belong to a
+// run, not to the canvas layout, so they must not come back on undo/redo.
+function withoutRunResults(nodes) {
+  return nodes.map((n) =>
+    n.type === 'outputNode' ? { ...n, data: { ...n.data, value: '' } } : n
+  );
+}
+
 function WorkflowCanvas() {
   // ---------- 1. ALL STATE FIRST ----------
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
@@ -171,23 +204,47 @@ function WorkflowCanvas() {
     setHistoryIndex((prev) => Math.min(prev + 1, 49));
   }, [historyIndex]);
 
-  const undo = useCallback(() => {
-    if (historyIndex === 0) return;
-    const newIndex = historyIndex - 1;
-    const snapshot = history[newIndex];
-    setNodes(snapshot.nodes);
-    setEdges(snapshot.edges);
-    setHistoryIndex(newIndex);
-  }, [history, historyIndex, setNodes, setEdges]);
+  const handleDelete = useCallback(
+  ({ nodes: deletedNodes, edges: deletedEdges }) => {
+    const deletedNodeIds = new Set(deletedNodes.map((n) => n.id));
+    const deletedEdgeIds = new Set(deletedEdges.map((e) => e.id));
 
-  const redo = useCallback(() => {
-    if (historyIndex >= history.length - 1) return;
-    const newIndex = historyIndex + 1;
-    const snapshot = history[newIndex];
-    setNodes(snapshot.nodes);
-    setEdges(snapshot.edges);
-    setHistoryIndex(newIndex);
-  }, [history, historyIndex, setNodes, setEdges]);
+    const remainingNodes = nodes.filter((n) => !deletedNodeIds.has(n.id));
+    const remainingEdges = edges.filter(
+      (e) =>
+        !deletedEdgeIds.has(e.id) &&
+        !deletedNodeIds.has(e.source) &&
+        !deletedNodeIds.has(e.target)
+    );
+    const compacted = compactMergeHandles(remainingNodes, remainingEdges);
+
+    setEdges(compacted);
+    pushHistory(remainingNodes, compacted);
+  },
+  [nodes, edges, setEdges, pushHistory]
+);
+
+const undo = useCallback(() => {
+  if (historyIndex === 0) return;
+  const newIndex = historyIndex - 1;
+  const snapshot = history[newIndex];
+  setNodes(withoutRunResults(snapshot.nodes));
+  setEdges(snapshot.edges);
+  setRunStatus({});
+  setInspectedNodeId(null);
+  setHistoryIndex(newIndex);
+}, [history, historyIndex, setNodes, setEdges]);
+
+const redo = useCallback(() => {
+  if (historyIndex >= history.length - 1) return;
+  const newIndex = historyIndex + 1;
+  const snapshot = history[newIndex];
+  setNodes(withoutRunResults(snapshot.nodes));
+  setEdges(snapshot.edges);
+  setRunStatus({});
+  setInspectedNodeId(null);
+  setHistoryIndex(newIndex);
+}, [history, historyIndex, setNodes, setEdges]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -218,6 +275,18 @@ function WorkflowCanvas() {
     [nodes, pushHistory, setEdges]
   );
 
+  // Clears the result shown on Output nodes. Input nodes keep their
+// typed value, because that value is user input, not a run result.
+const clearOutputResults = useCallback(() => {
+  setNodes((currentNodes) =>
+    currentNodes.map((node) =>
+      node.type === 'outputNode'
+        ? { ...node, data: { ...node.data, value: '' } }
+        : node
+    )
+  );
+}, [setNodes]);
+
   const updateNodeData = useCallback(
     (nodeId, newFields) => {
       setNodes((currentNodes) =>
@@ -236,15 +305,16 @@ function WorkflowCanvas() {
   }, [nodes, edges, pushHistory]);
 
   const deleteNode = useCallback(
-    (nodeId) => {
-      const updatedNodes = nodes.filter((n) => n.id !== nodeId);
-      const updatedEdges = edges.filter((e) => e.source !== nodeId && e.target !== nodeId);
-      setNodes(updatedNodes);
-      setEdges(updatedEdges);
-      pushHistory(updatedNodes, updatedEdges);
-    },
-    [nodes, edges, setNodes, setEdges, pushHistory]
-  );
+  (nodeId) => {
+    const updatedNodes = nodes.filter((n) => n.id !== nodeId);
+    const remainingEdges = edges.filter((e) => e.source !== nodeId && e.target !== nodeId);
+    const updatedEdges = compactMergeHandles(updatedNodes, remainingEdges);
+    setNodes(updatedNodes);
+    setEdges(updatedEdges);
+    pushHistory(updatedNodes, updatedEdges);
+  },
+  [nodes, edges, setNodes, setEdges, pushHistory]
+);
 
   const duplicateNode = useCallback(
     (nodeId) => {
@@ -481,12 +551,14 @@ const clearExecutionHistory = useCallback(() => {
   if (problems.length > 0) {
     setRunStatus({});
     setInspectedNodeId(null);
+    clearOutputResults();
     setValidationProblems(problems);
     setConnectionError(null);
     return;
   }
     setValidationProblems([]);
     setConnectionError(null);
+    clearOutputResults();
 
     setIsRunning(true);
     setInspectedNodeId(null);
@@ -542,7 +614,7 @@ const clearExecutionHistory = useCallback(() => {
     });
 
     setIsRunning(false);
-  }, [nodes, edges, getCleanNodes, getCleanEdges, updateNodeData, workflowName]);
+  }, [nodes, edges, getCleanNodes, getCleanEdges, updateNodeData, workflowName, clearOutputResults]);
 
   const nodesWithHandlers = nodes.map((node) => {
     let dotCount;
@@ -611,6 +683,7 @@ const inspectedNode = inspectedNodeId
           onDragOver={onDragOver}
           onNodeClick={handleNodeClick}
           nodeTypes={nodeTypes}
+          onDelete={handleDelete}
           fitView
         >
           <Background color="var(--grid-dot)" gap={20} size={1.5} />
