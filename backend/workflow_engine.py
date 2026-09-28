@@ -4,6 +4,7 @@ from models import Workflow, WorkflowNode
 import time
 from google.genai import types
 import requests
+import json
 
 class WorkflowError(Exception):
     """Raised when a workflow can't be executed (cycles, bad edges, etc.)."""
@@ -143,6 +144,20 @@ def run_node(node: WorkflowNode, incoming_value):
     if node_type == "inputNode":
         return data.get("value", "")
 
+    if node_type == "mergeNode":
+            mode = data.get("mode", "newline")
+            values = incoming_value if isinstance(incoming_value, list) else [incoming_value]
+            values = [str(v) for v in values if v is not None]
+            if not values:
+                raise WorkflowError("Merge Node has no connected inputs.")
+            if mode == "newline":
+                return "\n".join(values)
+            if mode == "space":
+                return " ".join(values)
+            if mode == "json":
+                return json.dumps(values, ensure_ascii=False)
+            raise WorkflowError(f"Unknown Merge mode: {mode}")
+
     if node_type == "ifNode":
         operator = data.get("operator", "not_empty")
         compare_to = data.get("compareValue", "")
@@ -196,6 +211,14 @@ def run_node(node: WorkflowNode, incoming_value):
 
     raise WorkflowError(f"Unknown node type: {node_type}")
 
+def handle_number(handle):
+    """'in-3' -> 3. Edges with no numbered handle sort last."""
+    if handle and handle.startswith("in-"):
+        try:
+            return int(handle.split("-")[1])
+        except ValueError:
+            pass
+    return 10_000
 
 
 def execute_workflow(workflow: Workflow):
@@ -206,31 +229,43 @@ def execute_workflow(workflow: Workflow):
     execution_order, node_map = topological_sort(workflow)
 
     node_outputs = {}
+    skipped_node_ids = set()
+    taken_handles = {}  # IF node id -> "true" or "false"
+
     incoming_edges = {node_id: [] for node_id in node_map}
     for edge in workflow.edges:
         incoming_edges[edge.target].append(edge)
 
-    # Tracks which nodes should be SKIPPED because they sit on the
-    # untaken branch of an IF node. Populated as we go.
-    skipped_node_ids = set()
+    def edge_is_live(edge):
+        """An edge is dead if its source was skipped, or it leaves an
+        IF node through the branch that was not taken."""
+        if edge.source in skipped_node_ids:
+            return False
+        if edge.source in taken_handles:
+            return edge.sourceHandle == taken_handles[edge.source]
+        return True
 
     results = []
 
     for node_id in execution_order:
-        if node_id in skipped_node_ids:
+        node = node_map[node_id]
+        incoming = incoming_edges[node_id]
+        live_edges = [e for e in incoming if edge_is_live(e)]
+
+        # A node is skipped only when it HAS incoming edges and none are live.
+        if incoming and not live_edges:
+            skipped_node_ids.add(node_id)
             results.append({
-                "nodeId": node_id,
-                "type": node_map[node_id].type,
-                "status": "skipped",
-                "input": None,
-                "output": None,
-                "durationSeconds": 0,
+                "nodeId": node_id, "type": node.type, "status": "skipped",
+                "input": None, "output": None, "durationSeconds": 0,
             })
             continue
 
-        node = node_map[node_id]
-        incoming = incoming_edges[node_id]
-        incoming_value = node_outputs[incoming[0].source] if incoming else None
+        if node.type == "mergeNode":
+            ordered = sorted(live_edges, key=lambda e: handle_number(e.targetHandle))
+            incoming_value = [node_outputs[e.source] for e in ordered]
+        else:
+            incoming_value = node_outputs[live_edges[0].source] if live_edges else None
 
         start_time = time.time()
 
@@ -259,36 +294,15 @@ def execute_workflow(workflow: Workflow):
 
         duration = round(time.time() - start_time, 3)
 
-        # IF nodes return a dict; every other node returns a plain value.
         if isinstance(output, dict) and "conditionResult" in output:
-            condition_result = output["conditionResult"]
-            real_output = output["value"]
-            node_outputs[node_id] = real_output
-
-            # Find this node's outgoing edges, split by which handle
-            # (branch) they came from, and mark the UNTAKEN branch's
-            # nodes (and everything downstream of them) as skipped.
-            taken_handle = "true" if condition_result else "false"
-            skipped_handle = "false" if condition_result else "true"
-
-            outgoing = [e for e in workflow.edges if e.source == node_id]
-            skipped_targets = [e.target for e in outgoing if e.sourceHandle == skipped_handle]
-
-            # Walk forward from each skipped target, marking everything
-            # reachable from it as skipped too (a whole skipped sub-branch).
-            to_visit = list(skipped_targets)
-            while to_visit:
-                current = to_visit.pop()
-                if current in skipped_node_ids:
-                    continue
-                skipped_node_ids.add(current)
-                downstream = [e.target for e in workflow.edges if e.source == current]
-                to_visit.extend(downstream)
-
+            # IF node: remember which branch was taken; downstream edges
+            # on the other branch become dead.
+            taken_handles[node_id] = "true" if output["conditionResult"] else "false"
+            node_outputs[node_id] = output["value"]
             results.append({
                 "nodeId": node_id, "type": node.type, "status": "success",
-                "input": incoming_value, "output": real_output,
-                "conditionResult": condition_result, "durationSeconds": duration,
+                "input": incoming_value, "output": output["value"],
+                "conditionResult": output["conditionResult"], "durationSeconds": duration,
             })
         else:
             node_outputs[node_id] = output

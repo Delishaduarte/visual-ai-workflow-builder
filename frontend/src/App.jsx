@@ -17,6 +17,7 @@ import HttpNode from './nodes/HttpNode';
 import InputNode from './nodes/InputNode';
 import CodeNode from './nodes/CodeNode';
 import PromptTemplateNode from './nodes/PromptTemplateNode';
+import MergeNode from './nodes/MergeNode';
 import LLMNode from './nodes/LLMNode';
 import FormatterNode from './nodes/FormatterNode';
 import OutputNode from './nodes/OutputNode';
@@ -29,6 +30,7 @@ const nodeTypes = {
   llmNode: LLMNode,
   formatterNode: FormatterNode,
   outputNode: OutputNode,
+  mergeNode: MergeNode,
   ifNode: IfNode,
   httpNode: HttpNode,
   codeNode: CodeNode,
@@ -308,6 +310,7 @@ function WorkflowCanvas() {
         onChange: undefined,
         onDelete: undefined,
         runStatus: undefined,
+        dotCount: undefined,
       },
     }));
   }, [nodes]);
@@ -318,6 +321,7 @@ function WorkflowCanvas() {
       source: e.source,
       target: e.target,
       sourceHandle: e.sourceHandle,
+      targetHandle: e.targetHandle,
       animated: e.animated,
     }));
   }, [edges]);
@@ -471,14 +475,16 @@ const clearExecutionHistory = useCallback(() => {
   [nodes, runStatus, updateNodeData]
 );
 
-    const runWorkflow = useCallback(async () => {
+  const runWorkflow = useCallback(async () => {
   setViewingHistoryRun(null);
   const problems = validateWorkflow(nodes, edges);
-    if (problems.length > 0) {
-      setValidationProblems(problems);
-      setConnectionError(null);
-      return;
-    }
+  if (problems.length > 0) {
+    setRunStatus({});
+    setInspectedNodeId(null);
+    setValidationProblems(problems);
+    setConnectionError(null);
+    return;
+  }
     setValidationProblems([]);
     setConnectionError(null);
 
@@ -538,17 +544,30 @@ const clearExecutionHistory = useCallback(() => {
     setIsRunning(false);
   }, [nodes, edges, getCleanNodes, getCleanEdges, updateNodeData, workflowName]);
 
-  const nodesWithHandlers = nodes.map((node) => ({
-    ...node,
-    data: {
-      ...node.data,
-      onChange: (newFields) => updateNodeData(node.id, newFields),
-      onDelete: () => deleteNode(node.id),
-      onDuplicate: () => duplicateNode(node.id),
-      onCommit: commitFieldEdit,
-      runStatus: runStatus[node.id]?.status,
-    },
-  }));
+  const nodesWithHandlers = nodes.map((node) => {
+    let dotCount;
+    if (node.type === 'mergeNode') {
+      // Highest connected dot number + 1, so there is always one spare dot.
+      const connected = edges
+        .filter((e) => e.target === node.id && e.targetHandle && e.targetHandle.startsWith('in-'))
+        .map((e) => parseInt(e.targetHandle.split('-')[1], 10))
+        .filter((n) => !Number.isNaN(n));
+      dotCount = (connected.length ? Math.max(...connected) : 0) + 1;
+    }
+
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        onChange: (newFields) => updateNodeData(node.id, newFields),
+        onDelete: () => deleteNode(node.id),
+        onDuplicate: () => duplicateNode(node.id),
+        onCommit: commitFieldEdit,
+        runStatus: runStatus[node.id]?.status,
+        dotCount,
+      },
+    };
+  });
 
 
   const handleNodeClick = useCallback((event, node) => {

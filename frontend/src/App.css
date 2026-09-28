@@ -809,3 +809,29 @@ html.dark .react-flow .react-flow__edge-path {
   border-color: #64748b;
   box-shadow: 0 0 0 3px rgba(100, 116, 139, 0.18), var(--shadow-lg);
 }
+
+.node-card--merge:hover {
+  border-color: #a855f7;
+  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.18), var(--shadow-lg);
+}
+
+.merge-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.merge-input-row {
+  position: relative;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  padding-left: 6px;
+}
+
+.merge-input-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}

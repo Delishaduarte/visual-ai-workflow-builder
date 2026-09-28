@@ -14,6 +14,7 @@ class WorkflowEdge(BaseModel):
     source: str
     target: str
     sourceHandle: str | None = None
+    targetHandle: str | None = None
 
 
 class Workflow(BaseModel):
@@ -22,4 +23,5 @@ class Workflow(BaseModel):
 
 class RetryNodeRequest(BaseModel):
     node: WorkflowNode
-    incomingValue: str | None = None
+    incomingValue: Any = None
+

@@ -78,6 +78,9 @@ export default function Sidebar({
     <div className="dndnode" draggable onDragStart={(e) => onDragStart(e, 'codeNode')}>
     Code
   </div>
+  <div className="dndnode" draggable onDragStart={(e) => onDragStart(e, 'mergeNode')}>
+  Merge
+</div>
         <div className="dndnode" draggable onDragStart={(e) => onDragStart(e, 'outputNode')}>
           <OutputIcon /> Output
         </div>

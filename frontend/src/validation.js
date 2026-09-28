@@ -53,6 +53,10 @@ const TYPE_LABELS = {
   llmNode: 'LLM Node',
   formatterNode: 'Formatter Node',
   outputNode: 'Output Node',
+  ifNode: 'IF Node',
+  httpNode: 'HTTP Node',
+  codeNode: 'Code Node',
+  mergeNode: 'Merge Node',
 };
 
 function checkRequiredFields(node) {
@@ -115,6 +119,28 @@ export function validateWorkflow(nodes, edges) {
   if (hasCycle(nodes, edges)) {
     problems.push('Workflow contains a cycle — nodes cannot depend on each other in a loop.');
   }
+
+    // Merge needs at least two connected inputs to be meaningful.
+  nodes
+    .filter((n) => n.type === 'mergeNode')
+    .forEach((mergeNode) => {
+      const incomingCount = edges.filter((e) => e.target === mergeNode.id).length;
+      if (incomingCount < 2) {
+        problems.push('Merge Node needs at least two connected inputs.');
+      }
+    });
+
+  // Any node other than Merge with several incoming edges would silently
+  // drop all but one, so warn instead.
+  nodes
+    .filter((n) => n.type !== 'mergeNode')
+    .forEach((node) => {
+      const incomingCount = edges.filter((e) => e.target === node.id).length;
+      if (incomingCount > 1) {
+        const label = TYPE_LABELS[node.type] || node.type;
+        problems.push(`${label} has ${incomingCount} incoming connections. Use a Merge Node to combine them.`);
+      }
+    });
 
   return problems;
 }
