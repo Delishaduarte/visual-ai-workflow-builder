@@ -835,3 +835,16 @@ html.dark .react-flow .react-flow__edge-path {
   font-weight: 600;
   color: var(--text-muted);
 }
+
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: var(--accent) !important;
+  stroke-width: 4 !important;
+  filter: drop-shadow(0 0 8px var(--accent));
+}
+
+.node-token-usage {
+  padding: 4px 12px 8px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  text-align: right;
+}

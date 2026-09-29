@@ -101,8 +101,9 @@ def run_python_code(code_string, incoming_value):
         return local_scope.get("result")
 
 
-def call_gemini(prompt_text: str, data: dict) -> str:
-    client = get_gemini_client()
+def call_gemini(prompt_text: str, data: dict, api_key: str) -> str:
+    from google import genai
+    from google.genai import types
 
     model = data.get("model") or "gemini-3.6-flash"
     system_prompt = data.get("systemPrompt") or ""
@@ -113,7 +114,6 @@ def call_gemini(prompt_text: str, data: dict) -> str:
     except ValueError:
         temperature = 0.7
 
-    
     max_tokens_raw = data.get("maxTokens")
     try:
         max_tokens = int(max_tokens_raw) if max_tokens_raw else 2000
@@ -127,6 +127,7 @@ def call_gemini(prompt_text: str, data: dict) -> str:
     )
 
     try:
+        client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
             model=model,
             contents=prompt_text,
@@ -135,7 +136,159 @@ def call_gemini(prompt_text: str, data: dict) -> str:
     except Exception as e:
         raise WorkflowError(f"Gemini API call failed: {e}")
 
-    return response.text
+    usage = response.usage_metadata
+    token_usage = {
+        "promptTokens": usage.prompt_token_count,
+        "outputTokens": usage.candidates_token_count,
+        "thinkingTokens": getattr(usage, "thoughts_token_count", None),
+        "totalTokens": usage.total_token_count,
+        "maxTokensAllowed": max_tokens,
+    }
+    return {"text": response.text, "tokenUsage": token_usage}
+
+def call_openai(prompt_text: str, data: dict, api_key: str) -> str:
+    import requests
+
+    model = data.get("model") or "gpt-4o-mini"
+    system_prompt = data.get("systemPrompt") or ""
+    temperature_raw = data.get("temperature")
+    try:
+        temperature = float(temperature_raw) if temperature_raw else 0.7
+    except ValueError:
+        temperature = 0.7
+    max_tokens_raw = data.get("maxTokens")
+    try:
+        max_tokens = int(max_tokens_raw) if max_tokens_raw else 2000
+    except ValueError:
+        max_tokens = 2000
+
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt_text})
+
+    try:
+        resp = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={
+                "model": model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"]
+    except requests.RequestException as e:
+        raise WorkflowError(f"OpenAI API call failed: {e}")
+
+
+def call_anthropic(prompt_text: str, data: dict, api_key: str) -> str:
+    import requests
+
+    model = data.get("model") or "claude-sonnet-5"
+    system_prompt = data.get("systemPrompt") or ""
+    temperature_raw = data.get("temperature")
+    try:
+        temperature = float(temperature_raw) if temperature_raw else 0.7
+    except ValueError:
+        temperature = 0.7
+    max_tokens_raw = data.get("maxTokens")
+    try:
+        max_tokens = int(max_tokens_raw) if max_tokens_raw else 2000
+    except ValueError:
+        max_tokens = 2000
+
+    try:
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": model,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "system": system_prompt or None,
+                "messages": [{"role": "user", "content": prompt_text}],
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json()["content"][0]["text"]
+    except requests.RequestException as e:
+        raise WorkflowError(f"Anthropic API call failed: {e}")
+
+
+def call_openrouter(prompt_text: str, data: dict, api_key: str) -> str:
+    import requests
+
+    model = data.get("model") or "openai/gpt-4o-mini"
+    system_prompt = data.get("systemPrompt") or ""
+    temperature_raw = data.get("temperature")
+    try:
+        temperature = float(temperature_raw) if temperature_raw else 0.7
+    except ValueError:
+        temperature = 0.7
+    max_tokens_raw = data.get("maxTokens")
+    try:
+        max_tokens = int(max_tokens_raw) if max_tokens_raw else 2000
+    except ValueError:
+        max_tokens = 2000
+
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt_text})
+
+    try:
+        resp = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={
+                "model": model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"]
+    except requests.RequestException as e:
+        raise WorkflowError(f"OpenRouter API call failed: {e}")
+
+
+def call_llm(prompt_text: str, data: dict) -> str:
+    """
+    Dispatches to the right provider using the API key the REQUEST
+    carries (typed in by whoever is running the workflow). Falls back
+    to the server's own GEMINI_API_KEY only for the gemini provider,
+    and only if the user left their own key blank — handy for the
+    developer's own local testing, never used for other providers.
+    """
+    provider = data.get("provider", "gemini")
+    api_key = (data.get("apiKey") or "").strip()
+
+    if not api_key:
+        raise WorkflowError(
+            f"No API key provided for {provider}. Enter your own key in the LLM node."
+        )
+    if provider == "gemini":
+        result = call_gemini(prompt_text, data, api_key)
+        return result["text"], result["tokenUsage"]
+    if provider == "openai":
+        return call_openai(prompt_text, data, api_key), None
+    if provider == "anthropic":
+        return call_anthropic(prompt_text, data, api_key), None
+    if provider == "openrouter":
+        return call_openrouter(prompt_text, data, api_key), None
+
+    raise WorkflowError(f"Unknown provider: {provider}")
 
 def fill_template(template, variables, incoming_value):
     """
@@ -222,7 +375,8 @@ def run_node(node: WorkflowNode, incoming_value, variables=None):
         return run_python_code(code_string, incoming_value)
 
     if node_type == "llmNode":
-        return call_gemini(str(incoming_value), data)
+        text, token_usage = call_llm(str(incoming_value), data)
+        return {"text": text, "tokenUsage": token_usage} if token_usage else text
 
     if node_type == "formatterNode":
         format_type = data.get("formatType", "text")
@@ -330,6 +484,11 @@ def execute_workflow(workflow: Workflow):
         duration = round(time.time() - start_time, 3)
         node_vars[node_id] = variables
 
+        token_usage = None
+        if isinstance(output, dict) and "tokenUsage" in output:
+            token_usage = output["tokenUsage"]
+            output = output["text"]
+
         if isinstance(output, dict) and "conditionResult" in output:
             taken_handles[node_id] = "true" if output["conditionResult"] else "false"
             node_outputs[node_id] = output["value"]
@@ -345,6 +504,7 @@ def execute_workflow(workflow: Workflow):
                 "nodeId": node_id, "type": node.type, "status": "success",
                 "input": incoming_value, "output": output,
                 "variables": variables, "durationSeconds": duration,
+                "tokenUsage": token_usage,
             })
 
     return {"status": "success", "executionOrder": execution_order, "results": results}

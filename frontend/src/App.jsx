@@ -281,6 +281,39 @@ function WorkflowCanvas() {
     [nodes, pushHistory, setEdges]
   );
 
+    // Lets the user grab the loose end of an existing wire and drag it
+  // off a node entirely to disconnect it, or onto a different node
+  // to re-route it. Without this, dragging from a wire's end does
+  // nothing.
+  const onReconnect = useCallback(
+    (oldEdge, newConnection) => {
+      setEdges((eds) => {
+        const updated = eds
+          .filter((e) => e.id !== oldEdge.id)
+          .concat({ ...oldEdge, ...newConnection });
+        pushHistory(nodes, updated);
+        return updated;
+      });
+    },
+    [nodes, pushHistory, setEdges]
+  );
+
+  const onReconnectEnd = useCallback(
+    (event, edge, handleType, connections) => {
+      // If the wire was dragged off into empty space rather than onto
+      // a new handle, `connections` comes back empty — treat that as
+      // "delete this wire."
+      if (connections && connections.length > 0) return;
+      setEdges((eds) => {
+        const remainingEdges = eds.filter((e) => e.id !== edge.id);
+        const compacted = compactMergeHandles(nodes, remainingEdges);
+        pushHistory(nodes, compacted);
+        return compacted;
+      });
+    },
+    [nodes, pushHistory, setEdges]
+  );
+
   // Clears the result shown on Output nodes. Input nodes keep their
   // typed value, because that value is user input, not a run result.
   const clearOutputResults = useCallback(() => {
@@ -376,6 +409,8 @@ function WorkflowCanvas() {
     setWorkflowName('Untitled Workflow');
   }, [clearCanvas]);
 
+    // Used for the live /workflow/run and /workflow/retry-node requests,
+  // where the API key legitimately needs to travel with the node.
   const getCleanNodes = useCallback(() => {
     return nodes.map((n) => ({
       id: n.id,
@@ -393,6 +428,15 @@ function WorkflowCanvas() {
     }));
   }, [nodes]);
 
+  // Used for Save, Export, and anything else written to localStorage
+  // or a file. API keys are stripped so they never end up sitting in
+  // a saved workflow, an exported JSON file, or execution history.
+  const getPersistableNodes = useCallback(() => {
+    return getCleanNodes().map((n) =>
+      n.type === 'llmNode' ? { ...n, data: { ...n.data, apiKey: undefined } } : n
+    );
+  }, [getCleanNodes]);
+
   const getCleanEdges = useCallback(() => {
     return edges.map((e) => ({
       id: e.id,
@@ -404,14 +448,14 @@ function WorkflowCanvas() {
     }));
   }, [edges]);
 
-  const saveWorkflow = useCallback(() => {
+    const saveWorkflow = useCallback(() => {
     const name = workflowName.trim() || 'Untitled Workflow';
     const allSaved = readSavedWorkflows();
-    allSaved[name] = { nodes: getCleanNodes(), edges: getCleanEdges() };
+    allSaved[name] = { nodes: getPersistableNodes(), edges: getCleanEdges() };
     writeSavedWorkflows(allSaved);
     setSavedWorkflowNames(Object.keys(allSaved));
     setWorkflowName(name);
-  }, [workflowName, getCleanNodes, getCleanEdges]);
+  }, [workflowName, getPersistableNodes, getCleanEdges]);
 
   const loadWorkflow = useCallback(
     (name) => {
@@ -459,10 +503,9 @@ function WorkflowCanvas() {
     setSavedWorkflowNames(Object.keys(allSaved));
   }, []);
 
-  const exportWorkflow = useCallback(() => {
+    const exportWorkflow = useCallback(() => {
     const name = workflowName.trim() || 'Untitled Workflow';
-    const exportData = { name, nodes: getCleanNodes(), edges: getCleanEdges() };
-
+    const exportData = { name, nodes: getPersistableNodes(), edges: getCleanEdges() };
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -470,7 +513,7 @@ function WorkflowCanvas() {
     link.download = `${name.toLowerCase().replace(/\s+/g, '-')}.json`;
     link.click();
     URL.revokeObjectURL(url);
-  }, [workflowName, getCleanNodes, getCleanEdges]);
+  }, [workflowName, getPersistableNodes, getCleanEdges]);
 
   const importWorkflow = useCallback(
     (file) => {
@@ -656,6 +699,7 @@ function WorkflowCanvas() {
         onDuplicate: () => duplicateNode(node.id),
         onCommit: commitFieldEdit,
         runStatus: runStatus[node.id]?.status,
+        tokenUsage: runStatus[node.id]?.tokenUsage,
         dotCount,
       },
     };
@@ -671,6 +715,8 @@ function WorkflowCanvas() {
         ? viewingHistoryRun.results.find((r) => r.nodeId === inspectedNodeId)
         : nodes.find((n) => n.id === inspectedNodeId))
     : null;
+
+    const edgesWithReconnect = edges.map((e) => ({ ...e, reconnectable: true }));
 
   return (
     <div className="app-container">
@@ -694,11 +740,13 @@ function WorkflowCanvas() {
       <div className="canvas-wrapper">
         <ReactFlow
           nodes={nodesWithHandlers}
-          edges={edges}
+          edges={edgesWithReconnect}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onDrop={onDrop}
+          onReconnect={onReconnect}
+          onReconnectEnd={onReconnectEnd}
           onDragOver={onDragOver}
           onNodeClick={handleNodeClick}
           nodeTypes={nodeTypes}
@@ -772,9 +820,21 @@ function WorkflowCanvas() {
 
         {Object.keys(runStatus).length > 0 && (
           <div className="status-panel">
-            <p className="status-panel-title">
-              {viewingHistoryRun ? `Past Run — ${new Date(viewingHistoryRun.timestamp).toLocaleString()}` : 'Execution Status'}
-            </p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+  <p className="status-panel-title" style={{ margin: 0 }}>
+    {viewingHistoryRun ? `Past Run — ${new Date(viewingHistoryRun.timestamp).toLocaleString()}` : 'Execution Status'}
+  </p>
+  <button
+    className="inspect-close-btn"
+    onClick={() => {
+      setRunStatus({});
+      setViewingHistoryRun(null);
+    }}
+    title="Close"
+  >
+    ×
+  </button>
+</div>
             {(viewingHistoryRun ? viewingHistoryRun.results : nodes.map((n) => ({ nodeId: n.id, type: n.type }))).map((entry) => {
               const nodeId = entry.nodeId;
               const nodeType = entry.type;

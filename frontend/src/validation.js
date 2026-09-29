@@ -192,5 +192,14 @@ export function validateWorkflow(nodes, edges) {
       seenNames.add(name);
     });
 
+      // Every LLM node needs its own key — there is no shared fallback key.
+  nodes
+    .filter((n) => n.type === 'llmNode')
+    .forEach((node) => {
+      if (!node.data?.apiKey?.trim()) {
+        problems.push('LLM Node has no API key. Enter your own key in the node.');
+      }
+    });
+
   return problems;
 }
