@@ -14,6 +14,7 @@ import './App.css';
 import { validateWorkflow } from './validation';
 import { PlayIcon } from './icons';
 import HttpNode from './nodes/HttpNode';
+import HelpPanel from './components/HelpPanel';
 import InputNode from './nodes/InputNode';
 import CodeNode from './nodes/CodeNode';
 import PromptTemplateNode from './nodes/PromptTemplateNode';
@@ -155,7 +156,7 @@ function WorkflowCanvas() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const { screenToFlowPosition } = useReactFlow();
-
+  const [showHelp, setShowHelp] = useState(false);
   const [executionHistory, setExecutionHistory] = useState([]);
   const [viewingHistoryRun, setViewingHistoryRun] = useState(null);
   const [runStatus, setRunStatus] = useState({});
@@ -757,6 +758,15 @@ function WorkflowCanvas() {
           <Controls />
         </ReactFlow>
 
+                <button
+          className="help-fab icon-tooltip"
+          data-tooltip="Node guide"
+          onClick={() => setShowHelp((v) => !v)}
+          title="Node guide"
+        >
+          ?
+        </button>
+
         {nodes.length === 0 && (
           <div className="empty-canvas-hint">
             <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -769,7 +779,7 @@ function WorkflowCanvas() {
           </div>
         )}
 
-        <div className="top-toolbar">
+                <div className="top-toolbar">
           <span className="top-toolbar-name">{workflowName || 'Untitled Workflow'}</span>
           <div className="top-toolbar-divider" />
           <button
@@ -817,6 +827,8 @@ function WorkflowCanvas() {
             </ul>
           </div>
         )}
+
+        {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
 
         {Object.keys(runStatus).length > 0 && (
           <div className="status-panel">
