@@ -41,7 +41,6 @@ export default function FormatterNode({ data }) {
           >
             <option value="text">Text</option>
             <option value="json">JSON</option>
-            <option value="structured">Structured</option>
           </select>
         </div>
       </div>

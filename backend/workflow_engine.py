@@ -373,14 +373,21 @@ def run_node(node: WorkflowNode, incoming_value, variables=None):
         if not code_string.strip():
             raise WorkflowError("Code Node has no code to run.")
         return run_python_code(code_string, incoming_value)
-
     if node_type == "llmNode":
         text, token_usage = call_llm(str(incoming_value), data)
         return {"text": text, "tokenUsage": token_usage} if token_usage else text
 
     if node_type == "formatterNode":
         format_type = data.get("formatType", "text")
-        return f"[FORMATTED as {format_type}] {incoming_value}"
+        text = str(incoming_value) if incoming_value is not None else ""
+
+        if format_type == "text":
+            return text
+        if format_type == "json":
+            import json
+            return json.dumps({"result": text}, ensure_ascii=False)
+
+        raise WorkflowError(f"Unknown format type: {format_type}")
 
     if node_type == "outputNode":
         return incoming_value
