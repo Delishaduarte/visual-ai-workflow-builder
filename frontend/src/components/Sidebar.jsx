@@ -50,9 +50,13 @@ export default function Sidebar({
     <aside className="sidebar">
       <div className="sidebar-header-row">
         <h3 className="sidebar-title">Nodes</h3>
-        <button className="theme-toggle-btn" onClick={onToggleTheme} title="Toggle theme">
-          {theme === 'light' ? <MoonIcon /> : <SunIcon />}
-        </button>
+        <button
+  className="theme-toggle-btn"
+  onClick={onToggleTheme}
+  title={theme === 'light' ? 'Dark mode' : 'Light mode'}
+>
+  {theme === 'light' ? <MoonIcon /> : <SunIcon />}
+</button>
       </div>
       <p className="sidebar-desc">Drag a node onto the canvas to add it.</p>
 

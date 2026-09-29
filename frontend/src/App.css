@@ -567,7 +567,7 @@ html.dark .react-flow .react-flow__edge-path {
 /* --- Status panel --- */
 .status-panel {
   position: absolute;
-  top: 16px;
+  top: 60px;
   right: 16px;
   z-index: 20;
   width: 260px;
@@ -908,6 +908,15 @@ html.dark .react-flow .react-flow__edge-path {
   pointer-events: none;
   transition: opacity 0.15s ease;
   z-index: 30;
+}
+
+/* Buttons living at the bottom of the screen need their tooltip to
+   pop upward instead of downward, or it runs off the bottom edge. */
+.react-flow__controls .icon-tooltip::after {
+  top: auto;
+  bottom: 120%;
+  left: 0;
+  transform: none;
 }
 
 .icon-tooltip:hover::after {

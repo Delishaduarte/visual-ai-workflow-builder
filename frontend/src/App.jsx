@@ -3,6 +3,7 @@ import {
   ReactFlow,
   Background,
   Controls,
+  ControlButton,
   useNodesState,
   useEdgesState,
   addEdge,
@@ -164,7 +165,7 @@ function WorkflowCanvas() {
   const [inspectedNodeId, setInspectedNodeId] = useState(null);
   const [validationProblems, setValidationProblems] = useState([]);
   const [connectionError, setConnectionError] = useState(null);
-
+  const [canvasLocked, setCanvasLocked] = useState(false);
   const [workflowName, setWorkflowName] = useState('My Workflow');
   const [savedWorkflowNames, setSavedWorkflowNames] = useState([]);
 
@@ -752,10 +753,22 @@ function WorkflowCanvas() {
           onNodeClick={handleNodeClick}
           nodeTypes={nodeTypes}
           onDelete={handleDelete}
+          nodesDraggable={!canvasLocked}
+          nodesConnectable={!canvasLocked}
+          elementsSelectable={!canvasLocked}
           fitView
         >
           <Background color="var(--grid-dot)" gap={20} size={1.5} />
-          <Controls />
+          <Controls showInteractive={false}>
+  <ControlButton
+    className="icon-tooltip"
+    data-tooltip={canvasLocked ? 'Unlock canvas' : 'Lock canvas'}
+    onClick={() => setCanvasLocked((v) => !v)}
+  >
+    {canvasLocked ? '🔒' : '🔓'}
+  </ControlButton>
+</Controls>
+            
         </ReactFlow>
 
                 <button
