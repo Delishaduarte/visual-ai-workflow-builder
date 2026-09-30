@@ -17,6 +17,55 @@ class WorkflowError(Exception):
 _gemini_client = None
 
 
+def evaluate_typed_condition(value, expression):
+    """
+    Parses a free-form condition like 'value >= 100' or 'value == "approved"'.
+    Supports: > < >= <= == != , always starting with the word `value`,
+    which stands for the previous node's output.
+    """
+    expression = (expression or "").strip()
+    match = re.match(r'^value\s*(>=|<=|==|!=|>|<)\s*(.+)$', expression)
+    if not match:
+        raise WorkflowError(
+            f'Could not understand condition "{expression}". '
+            'Use a form like: value >= 100, or value == "approved"'
+        )
+
+    operator, raw_target = match.group(1), match.group(2).strip()
+
+    # Strip matching quotes if the user wrote a quoted string target.
+    if (raw_target.startswith('"') and raw_target.endswith('"')) or \
+       (raw_target.startswith("'") and raw_target.endswith("'")):
+        target = raw_target[1:-1]
+        compare_as_text = True
+    else:
+        target = raw_target
+        compare_as_text = False
+
+    text_value = str(value) if value is not None else ""
+
+    # Try a numeric comparison first, unless the user quoted their target
+    # (which is an explicit signal they mean text, not a number).
+    if not compare_as_text:
+        try:
+            left = float(text_value)
+            right = float(target)
+            if operator == '>': return left > right
+            if operator == '<': return left < right
+            if operator == '>=': return left >= right
+            if operator == '<=': return left <= right
+            if operator == '==': return left == right
+            if operator == '!=': return left != right
+        except ValueError:
+            pass  # not numbers on both sides, fall through to text comparison
+
+    # Text comparison — only == and != make sense for text.
+    if operator == '==': return text_value == target
+    if operator == '!=': return text_value != target
+    raise WorkflowError(
+        f'"{operator}" only works with numbers. "{text_value}" is not a number.'
+    )
+
 def get_gemini_client():
     global _gemini_client
     if _gemini_client is None:
@@ -383,13 +432,19 @@ def run_node(node: WorkflowNode, incoming_value, variables=None):
             raise WorkflowError(f"Unknown Merge mode: {mode}")
 
     if node_type == "ifNode":
-        operator = data.get("operator", "not_empty")
-        compare_to = data.get("compareValue", "")
-        result = evaluate_condition(incoming_value, operator, compare_to)
+        check_type = data.get("checkType", "not_empty")
+
+        if check_type == "condition":
+            result = evaluate_typed_condition(incoming_value, data.get("conditionExpression", ""))
+        elif check_type == "contains":
+            result = evaluate_condition(incoming_value, "contains", data.get("compareValue", ""))
+        elif check_type == "not_empty":
+            result = evaluate_condition(incoming_value, "not_empty", "")
+        else:
+            raise WorkflowError(f"Unknown IF check type: {check_type}")
+
         # The IF node's "output" IS the incoming value, unchanged —
         # it just decides which branch that value continues down.
-        # We return both the pass-through value AND the boolean result;
-        # execute_workflow uses the boolean to decide which edges to follow.
         return {"value": incoming_value, "conditionResult": result}
     if node_type == "httpNode":
         url = data.get("url", "")
@@ -575,7 +630,7 @@ def evaluate_condition(value, operator, compare_to):
     compare_to = compare_to or ""
 
     if operator == "contains":
-        return compare_to in text
+        return compare_to.lower() in text.lower()
     if operator == "equals":
         return text == compare_to
     if operator == "not_empty":

@@ -12,14 +12,14 @@ function statusIcon(status) {
 export default function IfNode({ data }) {
   const statusClass =
     data.runStatus === 'running' ? 'is-running' : data.runStatus === 'error' ? 'is-error' : '';
-  const showCompareValue = data.operator !== 'not_empty';
+  const checkType = data.checkType || 'not_empty';
 
   return (
     <div className={`node-card node-card--if ${statusClass}`} style={{ borderLeft: '4px solid #eab308' }}>
       <Handle type="target" position={Position.Left} style={{ background: '#eab308', width: 10, height: 10 }} />
       <div className="node-header">
         <div className="node-title-group">
-            <IfIcon />
+          <IfIcon />
           <span className="node-title">
             IF
             {data.runStatus && (
@@ -28,54 +28,71 @@ export default function IfNode({ data }) {
           </span>
         </div>
         <div style={{ display: 'flex', gap: '4px' }}>
-            <button className="node-delete-btn nodrag" onClick={data.onDuplicate} title="Duplicate">⧉</button>
-            <button className="node-delete-btn nodrag" onClick={data.onDelete} title="Delete">×</button>
-            </div>
+          <button className="node-delete-btn nodrag" onClick={data.onDuplicate} title="Duplicate">⧉</button>
+          <button className="node-delete-btn nodrag" onClick={data.onDelete} title="Delete">×</button>
+        </div>
       </div>
+
       <div className="node-body">
         <div className="node-field">
-          <span className="node-label">Condition</span>
+          <span className="node-label">Check type</span>
           <select
             className="node-select nodrag"
-            value={data.operator || 'not_empty'}
-            onChange={(e) => data.onChange({ operator: e.target.value })}
+            value={checkType}
+            onChange={(e) => data.onChange({ checkType: e.target.value })}
             onBlur={data.onCommit}
           >
+            <option value="condition">Condition</option>
             <option value="contains">Contains</option>
-            <option value="equals">Equals</option>
-            <option value="not_empty">Is not empty</option>
+            <option value="not_empty">Is Not Empty</option>
           </select>
         </div>
-        {showCompareValue && (
+
+        {checkType === 'condition' && (
           <div className="node-field">
-            <span className="node-label">Compare Value</span>
+            <span className="node-label">Condition</span>
             <input
               type="text"
               className="node-input nodrag"
-              placeholder="text to compare"
+              placeholder='value >= 100'
+              value={data.conditionExpression || ''}
+              onChange={(e) => data.onChange({ conditionExpression: e.target.value })}
+              onBlur={data.onCommit}
+            />
+            <span className="node-hint">ⓘ <code>value</code> means the output from the previous node.</span>
+          </div>
+        )}
+
+        {checkType === 'contains' && (
+          <div className="node-field">
+            <span className="node-label">Contains</span>
+            <input
+              type="text"
+              className="node-input nodrag"
+              placeholder="invoice"
               value={data.compareValue || ''}
               onChange={(e) => data.onChange({ compareValue: e.target.value })}
               onBlur={data.onCommit}
             />
+            <span className="node-hint">ⓘ Checks whether the previous node's output contains this text.</span>
           </div>
         )}
+
+        {checkType === 'not_empty' && (
+          <span className="node-hint">ⓘ Checks whether the previous node produced a value.</span>
+        )}
       </div>
-      <div style={{ position: 'relative', height: '56px', padding: '4px 0' }}>
-        <span style={{ position: 'absolute', right: 26, top: 10, fontSize: '12px', color: '#16a34a', fontWeight: 700 }}>True</span>
-        <Handle
-            type="source"
-            position={Position.Right}
-            id="true"
-            style={{ background: '#16a34a', width: 12, height: 12, top: 16 }}
-        />
-        <span style={{ position: 'absolute', right: 24, top: 38, fontSize: '12px', color: '#ef4444', fontWeight: 700 }}>False</span>
-        <Handle
-            type="source"
-            position={Position.Right}
-            id="false"
-            style={{ background: '#ef4444', width: 12, height: 12, top: 44 }}
-        />
+
+      <div className="if-outputs">
+        <div className="if-output-row">
+          <span className="if-output-label if-output-true">TRUE</span>
+          <Handle type="source" position={Position.Right} id="true" className="if-handle if-handle-true" />
         </div>
+        <div className="if-output-row">
+          <span className="if-output-label if-output-false">FALSE</span>
+          <Handle type="source" position={Position.Right} id="false" className="if-handle if-handle-false" />
+        </div>
+      </div>
     </div>
   );
 }

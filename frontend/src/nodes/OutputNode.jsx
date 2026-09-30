@@ -1,11 +1,10 @@
 import { Handle, Position } from '@xyflow/react';
 import { OutputIcon } from '../icons';
 
-function statusIcon(status) {
-  if (status === 'success') return '✓';
-  if (status === 'running') return '●';
-  if (status === 'error') return '✕';
-  return '○';
+function branchClass(status) {
+  if (status === 'success') return 'branch-taken';
+  if (status === 'skipped') return 'branch-not-taken';
+  return '';
 }
 
 export default function OutputNode({ data }) {
@@ -13,16 +12,15 @@ export default function OutputNode({ data }) {
     data.runStatus === 'running' ? 'is-running' : data.runStatus === 'error' ? 'is-error' : '';
 
   return (
-    <div className={`node-card node-card--output ${statusClass}`} style={{ borderLeft: '4px solid #06b6d4' }}>
+    <div className={`node-card node-card--output ${statusClass} ${branchClass(data.runStatus)}`} style={{ borderLeft: '4px solid #06b6d4' }}>
       <Handle type="target" position={Position.Left} style={{ background: '#06b6d4', width: 10, height: 10 }} />
       <div className="node-header">
         <div className="node-title-group">
           <OutputIcon />
           <span className="node-title">
             Output
-            {data.runStatus && (
-              <span className={`node-status-badge ${data.runStatus}`}>{statusIcon(data.runStatus)}</span>
-            )}
+            {data.runStatus === 'success' && <span className="branch-mark branch-mark-taken">✓</span>}
+            {data.runStatus === 'skipped' && <span className="branch-mark branch-mark-not-taken">✕</span>}
           </span>
         </div>
         <div style={{ display: 'flex', gap: '4px' }}>

@@ -944,3 +944,104 @@ html.dark .react-flow .react-flow__edge-path {
   border-color: var(--accent);
   color: var(--accent);
 }
+
+.node-hint {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  margin-top: 2px;
+}
+
+.node-hint code {
+  background: var(--bg-subtle);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 10px;
+}
+
+.if-outputs {
+  padding: 10px 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.if-output-row {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  height: 20px;
+}
+
+.if-output-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding-right: 16px;
+}
+
+.if-output-true {
+  color: #16a34a;
+}
+
+.if-output-false {
+  color: #ef4444;
+}
+
+.if-handle.if-handle-true {
+  background: #16a34a !important;
+  width: 11px !important;
+  height: 11px !important;
+}
+
+.if-handle.if-handle-false {
+  background: #ef4444 !important;
+  width: 11px !important;
+  height: 11px !important;
+}
+
+.node-card--if:hover {
+  border-color: #eab308;
+  box-shadow: 0 0 0 3px rgba(234, 179, 8, 0.18), var(--shadow-lg);
+}
+
+/* Bright, unmistakable ring on whichever branch actually ran vs.
+   the one that got skipped — used for IF True/False Output pairs. */
+.node-card.branch-taken {
+  border-color: #22c55e !important;
+  box-shadow:
+    0 0 0 4px rgba(34, 197, 94, 0.35),
+    0 0 18px rgba(34, 197, 94, 0.4),
+    var(--shadow-lg) !important;
+}
+
+.node-card.branch-not-taken {
+  border-color: #ef4444 !important;
+  box-shadow:
+    0 0 0 4px rgba(239, 68, 68, 0.30),
+    0 0 18px rgba(239, 68, 68, 0.35),
+    var(--shadow-lg) !important;
+}
+
+.branch-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 900;
+  margin-left: 6px;
+}
+
+.branch-mark-taken {
+  background: #22c55e;
+  color: #ffffff;
+}
+
+.branch-mark-not-taken {
+  background: #ef4444;
+  color: #ffffff;
+}
