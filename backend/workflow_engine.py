@@ -310,6 +310,56 @@ def fill_template(template, variables, incoming_value):
 
     return re.sub(r"\{\{\s*([^{}]+?)\s*\}\}", replace, template)
 
+def extract_or_wrap_json(text):
+    """
+    Tries hard to return valid JSON from whatever the previous node
+    produced, in this order:
+      1. The whole text is already valid JSON — use it as-is.
+      2. A JSON object/array is hiding inside a ```json ... ``` block,
+         or just sitting somewhere inside a longer reply — pull that
+         part out and use it.
+      3. Nothing JSON-shaped was found — fall back to wrapping the
+         original text, so the output is still guaranteed valid JSON,
+         never a crash and never silently-wrong data.
+    """
+    import json
+    import re
+
+    stripped = text.strip()
+
+    # 1. Already valid JSON on its own.
+    try:
+        json.loads(stripped)
+        return stripped
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # 2a. A ```json ... ``` or ``` ... ``` code block.
+    code_block = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
+    if code_block:
+        candidate = code_block.group(1).strip()
+        try:
+            json.loads(candidate)
+            return candidate
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # 2b. The first { ... } or [ ... ] found anywhere in the text,
+    # matched from the first opening brace to the last closing one.
+    for open_ch, close_ch in (("{", "}"), ("[", "]")):
+        start = text.find(open_ch)
+        end = text.rfind(close_ch)
+        if start != -1 and end != -1 and end > start:
+            candidate = text[start:end + 1]
+            try:
+                json.loads(candidate)
+                return candidate
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+    # 3. Nothing JSON-shaped found anywhere — wrap the raw text so the
+    # result is still valid JSON, just honest that no structure was found.
+    return json.dumps({"result": text}, ensure_ascii=False)
 
 def run_node(node: WorkflowNode, incoming_value, variables=None):
     node_type = node.type
@@ -384,8 +434,7 @@ def run_node(node: WorkflowNode, incoming_value, variables=None):
         if format_type == "text":
             return text
         if format_type == "json":
-            import json
-            return json.dumps({"result": text}, ensure_ascii=False)
+            return extract_or_wrap_json(text)
 
         raise WorkflowError(f"Unknown format type: {format_type}")
 
