@@ -11,7 +11,8 @@ app = FastAPI()
 # to localhost:8000 due to the same-origin security policy (CORS).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173",
+                   "https://visual-ai-workflow-builder.vercel.app",],
     allow_methods=["*"],
     allow_headers=["*"],
 )
