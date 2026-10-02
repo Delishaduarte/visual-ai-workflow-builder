@@ -25,7 +25,7 @@ import FormatterNode from './nodes/FormatterNode';
 import OutputNode from './nodes/OutputNode';
 import Sidebar from './components/Sidebar';
 import IfNode from './nodes/IfNode';
-
+// deploy trigger
 const nodeTypes = {
   inputNode: InputNode,
   promptTemplateNode: PromptTemplateNode,
@@ -574,7 +574,7 @@ function WorkflowCanvas() {
           },
         };
 
-        const res = await fetch('http://127.0.0.1:8000/workflow/retry-node', {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/workflow/retry-node`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ node: cleanNode, incomingValue, variables }),
@@ -639,7 +639,7 @@ function WorkflowCanvas() {
 
     let response;
     try {
-      const res = await fetch('http://127.0.0.1:8000/workflow/run', {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/workflow/run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
